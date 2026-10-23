@@ -1,0 +1,2040 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>SisCheck-VTR | Gestão de Viaturas & Vistoria Operacional</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Lucide Icons CDN -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Supabase JS CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            tactical: {
+              950: '#060a17',
+              900: '#0b1329',
+              800: '#141e3c',
+              700: '#1e2d5a',
+              gold: '#f59e0b',
+              accent: '#3b82f6',
+              danger: '#ef4444',
+              success: '#10b981',
+              warning: '#f59e0b'
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body {
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+    input, textarea, select {
+      user-select: auto;
+    }
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 5px;
+      height: 5px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background-color: #334155;
+      border-radius: 4px;
+    }
+    canvas {
+      touch-action: none;
+    }
+  </style>
+</head>
+<body class="bg-tactical-950 text-slate-100 min-h-screen flex flex-col font-sans antialiased pb-16">
+
+  <!-- ============================================================================== -->
+  <!-- BARRA DE NAVEGAÇÃO SUPERIOR TÁTICA COM SELETOR DE PERFIL -->
+  <!-- ============================================================================== -->
+  <header class="bg-tactical-900 border-b border-slate-800 sticky top-0 z-40 px-3 py-2.5 shadow-xl">
+    <div class="max-w-4xl mx-auto flex items-center justify-between">
+      <div class="flex items-center gap-2.5">
+        <div class="w-9 h-9 rounded-xl bg-tactical-gold/20 border border-tactical-gold flex items-center justify-center text-tactical-gold shadow-inner">
+          <i data-lucide="shield-check" class="w-5 h-5"></i>
+        </div>
+        <div>
+          <h1 class="text-xs sm:text-sm font-black tracking-wider uppercase text-white flex items-center gap-1.5">
+            SisCheck-VTR
+            <span class="text-[9px] bg-tactical-gold/20 text-tactical-gold border border-tactical-gold/40 px-1.5 py-0.5 rounded font-mono font-bold">PM / FROTA</span>
+          </h1>
+          <p class="text-[10px] text-slate-400 font-medium">Gestão, Vistoria & Manutenção</p>
+        </div>
+      </div>
+
+      <!-- CONEXÃO SUPABASE & ALTERNÂNCIA DE PERFIL -->
+      <div class="flex items-center gap-1.5">
+        <button onclick="openModalSupabaseConfig()" id="btnSupabaseCloud" class="px-2 py-1.5 rounded-lg text-xs font-bold border border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center gap-1.5 transition" title="Configurar Conexão com Supabase">
+          <span class="w-2 h-2 rounded-full bg-slate-500" id="supabaseStatusDot"></span>
+          <span class="hidden sm:inline text-[11px]" id="supabaseStatusText">Nuvem</span>
+          <i data-lucide="cloud" class="w-3.5 h-3.5 text-tactical-accent"></i>
+        </button>
+
+        <div class="flex items-center gap-1 bg-slate-900/90 border border-slate-700/80 p-1 rounded-xl">
+          <button id="btnRoleDriver" onclick="switchMainRole('driver')" class="px-2.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 bg-tactical-gold text-slate-950 shadow-sm">
+            <i data-lucide="smartphone" class="w-3.5 h-3.5"></i>
+            <span class="hidden sm:inline">Motorista do Dia</span>
+            <span class="sm:hidden">Motorista</span>
+          </button>
+          <button id="btnRoleAdmin" onclick="switchMainRole('admin')" class="px-2.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 text-slate-400 hover:text-white">
+            <i data-lucide="layout-dashboard" class="w-3.5 h-3.5 text-tactical-accent"></i>
+            <span class="hidden sm:inline">Chefe de Transporte</span>
+            <span class="sm:hidden">Frota</span>
+            <span id="badgePendingAlerts" class="hidden text-[9px] bg-red-500 text-white font-black px-1.5 py-0.2 rounded-full animate-pulse">0</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ============================================================================== -->
+  <!-- VISÃO 1: APLICATIVO DO MOTORISTA (IN LOCO - WIZARD MOBILE EM 4 PASSOS) -->
+  <!-- ============================================================================== -->
+  <main id="driverSection" class="flex-1 max-w-md w-full mx-auto px-3.5 py-3.5 flex flex-col">
+    
+    <!-- BARRA DE PROGRESSO DO CHECKLIST -->
+    <div class="mb-3.5 bg-slate-900 border border-slate-800 rounded-2xl p-3 shadow-md">
+      <div class="flex items-center justify-between text-xs font-bold mb-1.5 text-slate-300">
+        <span id="stepTitle">Passo 1 de 4: Viatura & Escala</span>
+        <span id="stepPercent" class="text-tactical-gold font-mono">25%</span>
+      </div>
+      <div class="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
+        <div id="progressBar" class="bg-gradient-to-r from-tactical-accent to-tactical-gold h-full rounded-full transition-all duration-300 w-1/4"></div>
+      </div>
+    </div>
+
+    <!-- PASSO 1: DADOS DA ESCALA, VIATURA, KM E MONITORAMENTO DE ÓLEO -->
+    <section id="step1" class="space-y-3.5">
+      
+      <!-- Card Identificação do Condutor -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 shadow-md space-y-3">
+        <div class="flex items-center gap-2 text-tactical-gold text-xs font-black uppercase tracking-wider border-b border-slate-800/80 pb-2">
+          <i data-lucide="user-check" class="w-4 h-4"></i>
+          Identificação do Motorista de Serviço
+        </div>
+
+        <div class="grid grid-cols-2 gap-2.5">
+          <div>
+            <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Posto / Graduação</label>
+            <select id="driverRank" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-2 text-xs text-white font-semibold focus:outline-none focus:border-tactical-gold">
+              <option value="Sd PM">Sd PM</option>
+              <option value="Cb PM" selected>Cb PM</option>
+              <option value="3º Sgt PM">3º Sgt PM</option>
+              <option value="2º Sgt PM">2º Sgt PM</option>
+              <option value="1º Sgt PM">1º Sgt PM</option>
+              <option value="Subten PM">Subten PM</option>
+              <option value="Oficial">Oficial</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Nome de Guerra</label>
+            <input type="text" id="driverWarName" value="ALMEIDA" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-2 text-xs text-white font-black uppercase focus:outline-none focus:border-tactical-gold">
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Matrícula Funcional / RE</label>
+          <input type="text" id="driverBadge" value="39.412-8" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-2 text-xs text-white font-mono font-bold focus:outline-none focus:border-tactical-gold">
+        </div>
+      </div>
+
+      <!-- Card Dados da Viatura & Telefone Cautelado -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 shadow-md space-y-3">
+        <div class="flex items-center gap-2 text-tactical-accent text-xs font-black uppercase tracking-wider border-b border-slate-800/80 pb-2">
+          <i data-lucide="truck" class="w-4 h-4"></i>
+          Dados Operacionais da Viatura
+        </div>
+
+        <div class="grid grid-cols-2 gap-2.5">
+          <div>
+            <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Prefixo da VTR</label>
+            <select id="vehiclePrefixSelect" onchange="onDriverVehicleChange()" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-2 text-xs text-white font-bold focus:outline-none focus:border-tactical-accent">
+              <!-- Preenchido via JS dinamicamente -->
+            </select>
+          </div>
+          <div>
+            <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">KM Atual (Odômetro)</label>
+            <input type="number" id="vehicleKmInput" oninput="onKmInputChange()" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-2 text-xs text-white font-mono font-black focus:outline-none focus:border-tactical-accent">
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1 flex items-center justify-between">
+            <span>Celular Cautelado da Escala</span>
+            <span class="text-[9px] text-emerald-400 font-bold lowercase">contato operacional</span>
+          </label>
+          <div class="relative">
+            <input type="tel" id="dutyPhoneInput" value="(62) 99341-8899" class="w-full bg-slate-800 border border-slate-700 rounded-lg pl-8 pr-2.5 py-2 text-xs text-white font-mono font-bold focus:outline-none focus:border-tactical-accent">
+            <i data-lucide="phone-call" class="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5"></i>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Nível de Combustível</label>
+          <div class="grid grid-cols-4 gap-1.5 text-center text-xs font-bold">
+            <label class="cursor-pointer">
+              <input type="radio" name="fuelLevel" value="Reserva" class="peer sr-only">
+              <div class="p-2 rounded-lg bg-slate-800 peer-checked:bg-red-500/20 peer-checked:border-red-500 peer-checked:text-red-400 border border-slate-700 transition">
+                Res.
+              </div>
+            </label>
+            <label class="cursor-pointer">
+              <input type="radio" name="fuelLevel" value="1/2" class="peer sr-only">
+              <div class="p-2 rounded-lg bg-slate-800 peer-checked:bg-amber-500/20 peer-checked:border-amber-500 peer-checked:text-amber-400 border border-slate-700 transition">
+                1/2
+              </div>
+            </label>
+            <label class="cursor-pointer">
+              <input type="radio" name="fuelLevel" value="3/4" checked class="peer sr-only">
+              <div class="p-2 rounded-lg bg-slate-800 peer-checked:bg-emerald-500/20 peer-checked:border-emerald-500 peer-checked:text-emerald-400 border border-slate-700 transition">
+                3/4
+              </div>
+            </label>
+            <label class="cursor-pointer">
+              <input type="radio" name="fuelLevel" value="Cheio" class="peer sr-only">
+              <div class="p-2 rounded-lg bg-slate-800 peer-checked:bg-emerald-500/20 peer-checked:border-emerald-500 peer-checked:text-emerald-400 border border-slate-700 transition">
+                Cheio
+              </div>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <!-- CARD DINÂMICO DE MONITORAMENTO DE ÓLEO & REVISÃO (CALCULADO AUTOMATICAMENTE) -->
+      <div id="oilStatusCard" class="rounded-2xl p-3.5 border shadow-md space-y-2 transition">
+        <!-- Renderizado dinamicamente via renderOilStatusCard() -->
+      </div>
+
+      <!-- QUADRO DE AVISOS DA VIATURA CADASTRADOS PELO CHEFE DE TRANSPORTE -->
+      <div class="bg-amber-500/10 border border-amber-500/40 rounded-2xl p-3.5 shadow-md">
+        <div class="flex items-center gap-2 text-amber-400 text-xs font-black uppercase tracking-wider mb-2">
+          <i data-lucide="megaphone" class="w-4 h-4"></i>
+          Mural de Avisos da VTR (<span id="vtrNoticePrefixLabel">---</span>)
+        </div>
+        <div id="vtrNoticesContainer" class="space-y-2 text-xs text-amber-200/90 font-medium">
+          <!-- Inserido dinamicamente -->
+        </div>
+      </div>
+
+      <!-- RESUMO DA VISTORIA ANTERIOR ENTREGUE -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 text-xs space-y-2">
+        <div class="flex items-center justify-between text-slate-300 font-bold border-b border-slate-800 pb-1.5">
+          <span class="flex items-center gap-1.5 text-slate-400 text-[11px]">
+            <i data-lucide="history" class="w-3.5 h-3.5 text-tactical-accent"></i>
+            Último Condutor que Entregou:
+          </span>
+          <span class="text-tactical-gold font-bold text-[11px]" id="labelPrevDriverName">Cb PM SILVA</span>
+        </div>
+        <div class="flex justify-between text-[11px] text-slate-400">
+          <span>Horário de Devolução: <b class="text-white" id="labelPrevTime">Hoje às 06:45</b></span>
+          <span>KM Devolvido: <b class="text-white font-mono" id="labelPrevKm">78.435 KM</b></span>
+        </div>
+        <div class="p-2 rounded-lg bg-slate-800/80 text-[11px] text-slate-300 border border-slate-700/60">
+          <span class="text-amber-400 font-bold">Alterações que ele reportou:</span>
+          <span id="labelPrevAlterations">Nenhuma alteração informada. Viatura entregue 100% OK.</span>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- PASSO 2: FOTOS OBRIGATÓRIAS DOS 4 LADOS COM CARIMBO TÁTICO -->
+    <section id="step2" class="space-y-3.5 hidden">
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 shadow-md space-y-1">
+        <div class="flex items-center gap-2 text-tactical-accent text-xs font-black uppercase tracking-wider">
+          <i data-lucide="camera" class="w-4 h-4"></i>
+          Fotos Obrigatórias dos 4 Ângulos
+        </div>
+        <p class="text-[11px] text-slate-400 leading-relaxed">
+          Fotografe a viatura <strong>in loco</strong> no momento da assunção. As fotos recebem carimbo com data, hora, KM e prefixo.
+        </p>
+      </div>
+
+      <div class="grid grid-cols-2 gap-2.5">
+        
+        <!-- Frente -->
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-2.5 flex flex-col items-center text-center">
+          <div class="w-full aspect-video bg-slate-800/80 rounded-xl border-2 border-dashed border-slate-700 flex flex-col items-center justify-center relative overflow-hidden mb-2" id="boxFrente">
+            <img id="imgFrente" class="w-full h-full object-cover hidden">
+            <div id="phFrente" class="flex flex-col items-center text-slate-400">
+              <i data-lucide="arrow-up-circle" class="w-5 h-5 mb-1 text-tactical-gold"></i>
+              <span class="text-[10px] font-bold">FRENTE</span>
+            </div>
+          </div>
+          <label class="w-full bg-slate-800 hover:bg-slate-700 active:bg-tactical-accent text-white text-[10px] font-black py-2 px-2 rounded-lg flex items-center justify-center gap-1.5 cursor-pointer border border-slate-700 transition">
+            <i data-lucide="camera" class="w-3.5 h-3.5 text-tactical-gold"></i>
+            Capturar
+            <input type="file" accept="image/*" capture="environment" class="sr-only" onchange="captureSidePhoto(event, 'Frente')">
+          </label>
+        </div>
+
+        <!-- Traseira -->
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-2.5 flex flex-col items-center text-center">
+          <div class="w-full aspect-video bg-slate-800/80 rounded-xl border-2 border-dashed border-slate-700 flex flex-col items-center justify-center relative overflow-hidden mb-2" id="boxTraseira">
+            <img id="imgTraseira" class="w-full h-full object-cover hidden">
+            <div id="phTraseira" class="flex flex-col items-center text-slate-400">
+              <i data-lucide="arrow-down-circle" class="w-5 h-5 mb-1 text-tactical-gold"></i>
+              <span class="text-[10px] font-bold">TRASEIRA</span>
+            </div>
+          </div>
+          <label class="w-full bg-slate-800 hover:bg-slate-700 active:bg-tactical-accent text-white text-[10px] font-black py-2 px-2 rounded-lg flex items-center justify-center gap-1.5 cursor-pointer border border-slate-700 transition">
+            <i data-lucide="camera" class="w-3.5 h-3.5 text-tactical-gold"></i>
+            Capturar
+            <input type="file" accept="image/*" capture="environment" class="sr-only" onchange="captureSidePhoto(event, 'Traseira')">
+          </label>
+        </div>
+
+        <!-- Lateral Esquerda -->
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-2.5 flex flex-col items-center text-center">
+          <div class="w-full aspect-video bg-slate-800/80 rounded-xl border-2 border-dashed border-slate-700 flex flex-col items-center justify-center relative overflow-hidden mb-2" id="boxEsquerda">
+            <img id="imgEsquerda" class="w-full h-full object-cover hidden">
+            <div id="phEsquerda" class="flex flex-col items-center text-slate-400">
+              <i data-lucide="arrow-left-circle" class="w-5 h-5 mb-1 text-tactical-gold"></i>
+              <span class="text-[10px] font-bold">LAT. ESQUERDA</span>
+            </div>
+          </div>
+          <label class="w-full bg-slate-800 hover:bg-slate-700 active:bg-tactical-accent text-white text-[10px] font-black py-2 px-2 rounded-lg flex items-center justify-center gap-1.5 cursor-pointer border border-slate-700 transition">
+            <i data-lucide="camera" class="w-3.5 h-3.5 text-tactical-gold"></i>
+            Capturar
+            <input type="file" accept="image/*" capture="environment" class="sr-only" onchange="captureSidePhoto(event, 'Esquerda')">
+          </label>
+        </div>
+
+        <!-- Lateral Direita -->
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-2.5 flex flex-col items-center text-center">
+          <div class="w-full aspect-video bg-slate-800/80 rounded-xl border-2 border-dashed border-slate-700 flex flex-col items-center justify-center relative overflow-hidden mb-2" id="boxDireita">
+            <img id="imgDireita" class="w-full h-full object-cover hidden">
+            <div id="phDireita" class="flex flex-col items-center text-slate-400">
+              <i data-lucide="arrow-right-circle" class="w-5 h-5 mb-1 text-tactical-gold"></i>
+              <span class="text-[10px] font-bold">LAT. DIREITA</span>
+            </div>
+          </div>
+          <label class="w-full bg-slate-800 hover:bg-slate-700 active:bg-tactical-accent text-white text-[10px] font-black py-2 px-2 rounded-lg flex items-center justify-center gap-1.5 cursor-pointer border border-slate-700 transition">
+            <i data-lucide="camera" class="w-3.5 h-3.5 text-tactical-gold"></i>
+            Capturar
+            <input type="file" accept="image/*" capture="environment" class="sr-only" onchange="captureSidePhoto(event, 'Direita')">
+          </label>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- PASSO 3: CHECKLIST DINÂMICO COM OPÇÃO DE FOTO POR AVARIA -->
+    <section id="step3" class="space-y-3.5 hidden">
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-3 shadow-md flex items-center justify-between">
+        <div>
+          <div class="text-xs font-black uppercase tracking-wider text-white flex items-center gap-1.5">
+            <i data-lucide="check-square" class="w-4 h-4 text-tactical-gold"></i>
+            Itens de Vistoria
+          </div>
+          <p class="text-[10px] text-slate-400">Tique cada item ou aponte alteração com foto.</p>
+        </div>
+        <button type="button" onclick="markAllChecklistOk()" class="text-[10px] font-bold px-2.5 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20 active:scale-95 transition">
+          Marcar Todos OK
+        </button>
+      </div>
+
+      <!-- Container dos Itens Dinâmicos -->
+      <div id="dynamicChecklistContainer" class="space-y-3">
+        <!-- Renderizado dinamicamente via renderDriverChecklist() -->
+      </div>
+    </section>
+
+    <!-- PASSO 4: AUDITORIA DE SINISTRO OMITIDO & ASSINATURA DIGITAL -->
+    <section id="step4" class="space-y-3.5 hidden">
+      
+      <!-- BANNER DE AUDITORIA DE RESPONSABILIDADE (CRUZAMENTO DE TURNOS) -->
+      <div id="auditResponsibilityBanner" class="rounded-2xl p-3.5 border shadow-xl space-y-2.5 transition">
+        <!-- Renderizado dinamicamente -->
+      </div>
+
+      <!-- Resumo do Checklist -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 text-xs space-y-2">
+        <div class="font-bold text-white uppercase tracking-wider border-b border-slate-800 pb-1.5 flex items-center justify-between">
+          <span>Resumo da Vistoria</span>
+          <span class="text-tactical-gold font-mono" id="reviewVtrPrefix">---</span>
+        </div>
+        <div class="grid grid-cols-2 gap-1.5 text-slate-300 text-[11px]">
+          <div>Motorista: <b class="text-white" id="reviewDriverName">---</b></div>
+          <div>Matrícula: <b class="text-white font-mono" id="reviewDriverBadge">---</b></div>
+          <div>KM Registrado: <b class="text-white font-mono" id="reviewKm">---</b></div>
+          <div>Telefone Cautela: <b class="text-white font-mono" id="reviewPhone">---</b></div>
+        </div>
+
+        <div class="pt-2 border-t border-slate-800">
+          <span class="font-bold text-slate-300">Alterações Detectadas Neste Turno:</span>
+          <ul id="reviewAlterationsList" class="mt-1 space-y-1 text-slate-300">
+            <!-- Itens apontados -->
+          </ul>
+        </div>
+      </div>
+
+      <!-- ASSINATURA DIGITAL DO MOTORISTA -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 space-y-2.5">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-bold uppercase tracking-wider text-slate-200 flex items-center gap-1.5">
+            <i data-lucide="pen-tool" class="w-4 h-4 text-tactical-gold"></i>
+            Assinatura Digital do Motorista
+          </span>
+          <button type="button" onclick="clearSignatureCanvas()" class="text-[10px] text-slate-400 hover:text-white underline">
+            Limpar
+          </button>
+        </div>
+        <p class="text-[10px] text-slate-400">Assine com o dedo no espaço abaixo para autenticar a vistoria in loco:</p>
+        <div class="bg-tactical-950 rounded-xl border border-slate-700 p-1 relative overflow-hidden">
+          <canvas id="signatureCanvas" width="380" height="120" class="w-full bg-tactical-950 rounded-lg cursor-crosshair"></canvas>
+          <div id="sigPlaceholder" class="absolute inset-0 flex items-center justify-center text-slate-600 pointer-events-none text-xs font-semibold">
+            Assine aqui com o dedo
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- BOTÕES DE NAVEGAÇÃO FIXOS NA PARTE INFERIOR DO CELULAR -->
+    <div class="mt-auto pt-3 flex gap-2.5">
+      <button id="btnPrevStep" onclick="prevWizardStep()" class="hidden flex-1 py-3 px-3 rounded-xl border border-slate-700 bg-slate-800 text-white font-bold text-xs uppercase tracking-wider active:bg-slate-700 flex items-center justify-center gap-1 transition">
+        <i data-lucide="chevron-left" class="w-4 h-4"></i>
+        Voltar
+      </button>
+      <button id="btnNextStep" onclick="nextWizardStep()" class="flex-1 py-3.5 px-3 rounded-xl bg-gradient-to-r from-tactical-gold to-amber-600 text-slate-950 font-black text-xs uppercase tracking-wider shadow-lg shadow-amber-500/20 active:scale-[0.98] flex items-center justify-center gap-1.5 transition">
+        <span id="btnNextStepLabel">Avançar para Fotos</span>
+        <i data-lucide="chevron-right" class="w-4 h-4"></i>
+      </button>
+    </div>
+
+  </main>
+
+  <!-- ============================================================================== -->
+  <!-- VISÃO 2: DASHBOARD DO CHEFE DE TRANSPORTE (GESTÃO DA FROTA & MANUTENÇÃO) -->
+  <!-- ============================================================================== -->
+  <main id="adminSection" class="flex-1 max-w-4xl w-full mx-auto px-3.5 py-4 hidden flex-col space-y-4">
+    
+    <!-- SUB-BARRA DE ABAS ADMINISTRATIVAS -->
+    <div class="flex overflow-x-auto custom-scrollbar bg-slate-900 border border-slate-800 rounded-xl p-1 gap-1">
+      <button onclick="switchAdminTab('fleet')" id="tabBtnFleet" class="px-3 py-2 text-xs font-bold rounded-lg bg-tactical-accent text-white shrink-0 transition flex items-center gap-1.5">
+        <i data-lucide="gauge" class="w-3.5 h-3.5"></i>
+        Painel da Frota & Óleo
+      </button>
+      <button onclick="switchAdminTab('newVtr')" id="tabBtnNewVtr" class="px-3 py-2 text-xs font-bold rounded-lg text-slate-400 hover:text-white shrink-0 transition flex items-center gap-1.5">
+        <i data-lucide="plus-circle" class="w-3.5 h-3.5"></i>
+        Cadastrar Viatura
+      </button>
+      <button onclick="switchAdminTab('audits')" id="tabBtnAudits" class="px-3 py-2 text-xs font-bold rounded-lg text-slate-400 hover:text-white shrink-0 transition flex items-center gap-1.5">
+        <i data-lucide="gavel" class="w-3.5 h-3.5 text-red-400"></i>
+        Sinistros Omitidos
+      </button>
+      <button onclick="switchAdminTab('items')" id="tabBtnItems" class="px-3 py-2 text-xs font-bold rounded-lg text-slate-400 hover:text-white shrink-0 transition flex items-center gap-1.5">
+        <i data-lucide="list-checks" class="w-3.5 h-3.5"></i>
+        Itens do Checklist
+      </button>
+      <button onclick="switchAdminTab('notices')" id="tabBtnNotices" class="px-3 py-2 text-xs font-bold rounded-lg text-slate-400 hover:text-white shrink-0 transition flex items-center gap-1.5">
+        <i data-lucide="bell" class="w-3.5 h-3.5"></i>
+        Quadro de Avisos
+      </button>
+    </div>
+
+    <!-- ABA 1: PAINEL DA FROTA, TROCA DE ÓLEO & REVISÕES (DASHBOARD EXECUTIVO) -->
+    <div id="adminTabFleet" class="space-y-4">
+      
+      <!-- CARDS DE MÉTRICAS (KPIs DO CHEFE DE TRANSPORTE) -->
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+        
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-3">
+          <div class="text-[10px] font-bold text-slate-400 uppercase">Frota Total</div>
+          <div class="text-xl font-black text-white mt-1" id="kpiTotalVehicles">0</div>
+          <div class="text-[9px] text-slate-500 mt-0.5">Viaturas na unidade</div>
+        </div>
+
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-3">
+          <div class="text-[10px] font-bold text-emerald-400 uppercase">Em Serviço / Prontas</div>
+          <div class="text-xl font-black text-emerald-400 mt-1" id="kpiActiveVehicles">0</div>
+          <div class="text-[9px] text-emerald-500/80 mt-0.5">Manutenção em dia</div>
+        </div>
+
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-3">
+          <div class="text-[10px] font-bold text-amber-400 uppercase">Óleo / Revisão Próximo</div>
+          <div class="text-xl font-black text-amber-400 mt-1" id="kpiWarningOil">0</div>
+          <div class="text-[9px] text-amber-500/80 mt-0.5">< 1.000 KM ou < 20 dias</div>
+        </div>
+
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-3">
+          <div class="text-[10px] font-bold text-red-400 uppercase">Óleo Vencido / Urgente</div>
+          <div class="text-xl font-black text-red-400 mt-1" id="kpiCriticalOil">0</div>
+          <div class="text-[9px] text-red-500/80 mt-0.5">Troca imediata necessária</div>
+        </div>
+
+      </div>
+
+      <!-- TABELA / LISTA DETALHADA DAS VIATURAS COM STATUS DE ÓLEO & REVISÃO -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-md space-y-3">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-2.5">
+          <div>
+            <h2 class="text-xs font-black uppercase tracking-wider text-white flex items-center gap-1.5">
+              <i data-lucide="droplet" class="w-4 h-4 text-tactical-gold"></i>
+              Controle de Manutenção Preventiva: Óleo & Revisões
+            </h2>
+            <p class="text-[11px] text-slate-400">Calculado a partir do KM inserido pelos motoristas em cada vistoria.</p>
+          </div>
+          <button onclick="renderFleetDashboard()" class="text-xs text-tactical-gold hover:underline flex items-center gap-1">
+            <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+            Atualizar
+          </button>
+        </div>
+
+        <div id="fleetVehiclesList" class="space-y-3">
+          <!-- Renderizado dinamicamente via renderFleetDashboard() -->
+        </div>
+      </div>
+    </div>
+
+    <!-- ABA 2: CADASTRO DE NOVA VIATURA COM CONTROLE DE KM E ÓLEO -->
+    <div id="adminTabNewVtr" class="space-y-4 hidden">
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-md space-y-3 max-w-xl mx-auto">
+        <div class="flex items-center gap-2 text-tactical-gold text-xs font-black uppercase tracking-wider border-b border-slate-800 pb-2">
+          <i data-lucide="plus-circle" class="w-4 h-4"></i>
+          Cadastrar Nova Viatura na Frota
+        </div>
+        <p class="text-[11px] text-slate-400">
+          Informe o KM inicial e os parâmetros da última troca de óleo para que o sistema gerencie as revisões futuras automaticamente.
+        </p>
+
+        <form id="formNewVehicle" onsubmit="handleCreateVehicle(event)" class="space-y-3">
+          <div class="grid grid-cols-2 gap-2.5">
+            <div>
+              <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Prefixo da Viatura</label>
+              <input type="text" id="newVtrPrefix" required placeholder="Ex: VTR-5012" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-2 text-xs text-white font-black uppercase focus:outline-none focus:border-tactical-gold">
+            </div>
+            <div>
+              <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Placa</label>
+              <input type="text" id="newVtrPlate" required placeholder="Ex: BRA-1A23" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-2 text-xs text-white font-mono uppercase focus:outline-none focus:border-tactical-gold">
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Modelo / Descrição da Viatura</label>
+            <input type="text" id="newVtrModel" required placeholder="Ex: Toyota Hilux 4x4 Tática, Renault Duster..." class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-2 text-xs text-white focus:outline-none focus:border-tactical-gold">
+          </div>
+
+          <div class="grid grid-cols-2 gap-2.5">
+            <div>
+              <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">KM Atual de Cadastro</label>
+              <input type="number" id="newVtrKmAtual" required placeholder="Ex: 54000" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-2 text-xs text-white font-mono font-bold focus:outline-none focus:border-tactical-gold">
+            </div>
+            <div>
+              <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Status Operacional</label>
+              <select id="newVtrStatus" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-2 text-xs text-white font-bold focus:outline-none focus:border-tactical-gold">
+                <option value="ativa">Ativa / Em Serviço</option>
+                <option value="manutencao">Em Manutenção / Oficina</option>
+                <option value="reserva">Reserva Técnica</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Parâmetros de Troca de Óleo e Revisão -->
+          <div class="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-2.5">
+            <span class="text-[10px] font-bold text-tactical-accent uppercase block">Parâmetros da Troca de Óleo do Motor</span>
+            
+            <div class="grid grid-cols-2 gap-2.5">
+              <div>
+                <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">KM da Última Troca</label>
+                <input type="number" id="newVtrLastOilKm" required placeholder="Ex: 50000" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-2 text-xs text-white font-mono focus:outline-none focus:border-tactical-accent">
+              </div>
+              <div>
+                <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Data da Última Troca</label>
+                <input type="date" id="newVtrLastOilDate" required class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-2 text-xs text-white focus:outline-none focus:border-tactical-accent">
+              </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-2.5">
+              <div>
+                <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Intervalo por KM</label>
+                <input type="number" id="newVtrIntervalKm" value="10000" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-2 text-xs text-white font-mono focus:outline-none focus:border-tactical-accent">
+              </div>
+              <div>
+                <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Intervalo por Tempo (Dias)</label>
+                <input type="number" id="newVtrIntervalDays" value="180" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-2 text-xs text-white font-mono focus:outline-none focus:border-tactical-accent">
+              </div>
+            </div>
+          </div>
+
+          <button type="submit" class="w-full py-3 bg-tactical-gold hover:bg-amber-500 text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl flex items-center justify-center gap-1.5 shadow-lg transition">
+            <i data-lucide="check" class="w-4 h-4"></i>
+            Cadastrar Viatura na Frota
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <!-- ABA 3: SINISTROS OMITIDOS (CADEIA DE CUSTÓDIA / APURAÇÃO FORMAL) -->
+    <div id="adminTabAudits" class="space-y-4 hidden">
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-md space-y-3">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+          <h2 class="text-xs font-black uppercase tracking-wider text-red-400 flex items-center gap-1.5">
+            <i data-lucide="alert-octagon" class="w-4 h-4"></i>
+            Avarias & Sinistros Omitidos por Condutores Anteriores
+          </h2>
+          <span class="text-[10px] text-slate-500">Auditoria Automática</span>
+        </div>
+        <p class="text-[11px] text-slate-400">
+          Quando o motorista do turno atual detecta avaria que não foi informada pelo condutor que entregou a viatura, a ocorrência é gravada abaixo para despacho do Chefe de Transporte / Sindicância.
+        </p>
+
+        <div id="adminSinistrosList" class="space-y-3">
+          <!-- Renderizado dinamicamente via renderAdminSinistros() -->
+        </div>
+      </div>
+    </div>
+
+    <!-- ABA 4: ITENS DO CHECKLIST DINÂMICO (PARAMETRIZAÇÃO DO SISTEMA) -->
+    <div id="adminTabItems" class="space-y-4 hidden">
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-md space-y-3">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+          <h2 class="text-xs font-black uppercase tracking-wider text-tactical-gold flex items-center gap-1.5">
+            <i data-lucide="plus-circle" class="w-4 h-4"></i>
+            Acrescentar Novo Item de Alteração no Checklist
+          </h2>
+        </div>
+        <p class="text-[11px] text-slate-400">
+          Como aparecem muitas alterações na rotina operacional que não é possível memorizar, cadastre novos componentes aqui para que apareçam imediatamente nos celulares de todos os policiais.
+        </p>
+
+        <div class="space-y-2.5">
+          <div>
+            <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Título do Componente / Item</label>
+            <input type="text" id="adminNewItemTitle" placeholder="Ex: Câmera Corporal, Suporte Fuzil T4, Luz de Ré, Bateria..." class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-2 text-xs text-white focus:outline-none focus:border-tactical-gold">
+          </div>
+
+          <div class="grid grid-cols-2 gap-2.5">
+            <div>
+              <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Categoria</label>
+              <select id="adminNewItemCategory" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-2 text-xs text-white focus:outline-none focus:border-tactical-gold">
+                <option value="Mecânica & Fluidos">Mecânica & Fluidos</option>
+                <option value="Sinalizadores & Elétrica">Sinalizadores & Elétrica</option>
+                <option value="Rodagem & Pneus">Rodagem & Pneus</option>
+                <option value="Higiene & Interior">Higiene & Interior</option>
+                <option value="Equipamentos Táticos">Equipamentos Táticos</option>
+                <option value="Outros">Outros</option>
+              </select>
+            </div>
+            <div class="flex items-center pt-4">
+              <label class="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+                <input type="checkbox" id="adminNewItemRequirePhoto" checked class="rounded border-slate-700 text-tactical-gold focus:ring-0">
+                <span class="text-[11px]">Exigir foto se alterado</span>
+              </label>
+            </div>
+          </div>
+
+          <button type="button" onclick="handleAdminAddChecklistItem()" class="w-full py-2.5 bg-tactical-gold hover:bg-amber-500 text-slate-950 font-black text-xs uppercase tracking-wider rounded-lg flex items-center justify-center gap-1.5 transition">
+            <i data-lucide="plus" class="w-4 h-4"></i>
+            Adicionar ao Checklist dos Policiais
+          </button>
+        </div>
+      </div>
+
+      <!-- Lista de Itens Existentes -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-md space-y-2">
+        <span class="text-xs font-bold text-white uppercase tracking-wider block border-b border-slate-800 pb-2">
+          Itens Ativos no Checklist (<span id="adminTotalItemsCount">0</span>)
+        </span>
+        <div id="adminItemsListContainer" class="space-y-2 max-h-80 overflow-y-auto custom-scrollbar pr-1">
+          <!-- Lista -->
+        </div>
+      </div>
+    </div>
+
+    <!-- ABA 5: QUADRO DE AVISOS DAS VIATURAS -->
+    <div id="adminTabNotices" class="space-y-4 hidden">
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-md space-y-3">
+        <h2 class="text-xs font-black uppercase tracking-wider text-amber-400 flex items-center gap-1.5 border-b border-slate-800 pb-2">
+          <i data-lucide="bell-plus" class="w-4 h-4"></i>
+          Publicar Aviso no Mural de uma Viatura
+        </h2>
+        <p class="text-[11px] text-slate-400">
+          Este aviso aparecerá em destaque no celular do policial assim que ele selecionar o prefixo correspondente.
+        </p>
+
+        <div class="space-y-2.5">
+          <div>
+            <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Viatura Alvo</label>
+            <select id="adminNoticeTargetVtr" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-2 text-xs text-white">
+              <!-- Preenchido via JS -->
+            </select>
+          </div>
+
+          <div>
+            <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Mensagem de Alerta</label>
+            <textarea id="adminNoticeMessageInput" rows="3" placeholder="Ex: Cuidado ao acionar a tração 4x4. Revisão agendada para sexta-feira." class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-xs text-white focus:outline-none focus:border-amber-400"></textarea>
+          </div>
+
+          <button type="button" onclick="handleAdminSaveNotice()" class="w-full py-2.5 bg-amber-500 text-slate-950 font-black text-xs uppercase tracking-wider rounded-lg flex items-center justify-center gap-1.5">
+            <i data-lucide="send" class="w-4 h-4"></i>
+            Publicar Aviso no Mural
+          </button>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- ============================================================================== -->
+  <!-- MODAL: REGISTRAR TROCA DE ÓLEO / REVISÃO REALIZADA -->
+  <!-- ============================================================================== -->
+  <div id="modalOilMaintenance" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+    <div class="bg-slate-900 border border-slate-700 w-full max-w-sm rounded-2xl p-4 shadow-2xl space-y-3">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+        <div class="flex items-center gap-2 text-tactical-gold">
+          <i data-lucide="wrench" class="w-5 h-5"></i>
+          <span class="text-xs font-bold uppercase text-white">Registrar Troca de Óleo</span>
+        </div>
+        <button onclick="closeModalOil()" class="text-slate-400 hover:text-white p-1">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <div class="text-xs text-slate-300 space-y-2">
+        <p>Viatura: <b id="modalOilPrefix" class="text-tactical-gold font-mono">---</b></p>
+        
+        <div>
+          <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">KM em que foi Realizada a Troca</label>
+          <input type="number" id="modalOilDoneKm" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-2 text-xs text-white font-mono font-bold">
+        </div>
+
+        <div>
+          <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Data da Realização</label>
+          <input type="date" id="modalOilDoneDate" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-2 text-xs text-white">
+        </div>
+      </div>
+
+      <div class="flex gap-2 pt-2 border-t border-slate-800">
+        <button onclick="closeModalOil()" class="flex-1 py-2 bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs rounded-xl border border-slate-700">
+          Cancelar
+        </button>
+        <button onclick="confirmOilChangeExecution()" class="flex-1 py-2 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-black text-xs rounded-xl">
+          Confirmar Troca
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================================== -->
+  <!-- MODAL: TERMO DE VISTORIA FINALIZADA -->
+  <!-- ============================================================================== -->
+  <div id="modalTermoFinalizado" class="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+    <div class="bg-slate-900 border border-slate-700 w-full max-w-md rounded-2xl p-5 shadow-2xl max-h-[90vh] overflow-y-auto custom-scrollbar flex flex-col space-y-3.5">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-2.5">
+        <div class="flex items-center gap-2">
+          <i data-lucide="file-check" class="w-5 h-5 text-emerald-400"></i>
+          <span class="text-xs sm:text-sm font-black text-white uppercase">Termo de Cautela e Vistoria</span>
+        </div>
+        <button onclick="closeModalTermo()" class="text-slate-400 hover:text-white p-1">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <div id="termoContentBody" class="text-xs space-y-3 text-slate-300">
+        <!-- Preenchido via JS -->
+      </div>
+
+      <div class="flex gap-2 pt-2 border-t border-slate-800">
+        <button onclick="window.print()" class="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 border border-slate-700">
+          <i data-lucide="printer" class="w-4 h-4"></i>
+          Imprimir / PDF
+        </button>
+        <button onclick="closeModalTermo()" class="flex-1 py-2.5 bg-tactical-gold text-slate-950 font-black text-xs rounded-xl flex items-center justify-center gap-1.5">
+          Concluir
+        </button>
+      </div>
+    </div>
+  <!-- ============================================================================== -->
+  <!-- MODAL: CONFIGURAÇÃO DE CONEXÃO COM O SUPABASE -->
+  <!-- ============================================================================== -->
+  <div id="modalSupabaseConfig" class="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+    <div class="bg-slate-900 border border-slate-700 w-full max-w-md rounded-2xl p-5 shadow-2xl space-y-3.5">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-2.5">
+        <div class="flex items-center gap-2">
+          <i data-lucide="cloud" class="w-5 h-5 text-tactical-accent"></i>
+          <span class="text-xs sm:text-sm font-black text-white uppercase">Conexão Supabase (Nuvem)</span>
+        </div>
+        <button onclick="closeModalSupabaseConfig()" class="text-slate-400 hover:text-white p-1">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <div class="text-xs text-slate-300 space-y-3">
+        <p class="text-[11px] text-slate-400">
+          Conecte sua conta do <strong>Supabase</strong> para que as vistorias, fotos dos 4 lados e alertas de sinistros fiquem salvos em nuvem corporativa e sincronizados em tempo real.
+        </p>
+
+        <div>
+          <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Project URL (URL do Projeto)</label>
+          <input type="text" id="cfgSupabaseUrl" placeholder="Ex: https://xyzcompany.supabase.co" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-2 text-xs text-white font-mono focus:outline-none focus:border-tactical-accent">
+        </div>
+
+        <div>
+          <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">anon public key (Chave de Acesso Pública)</label>
+          <input type="password" id="cfgSupabaseKey" placeholder="Ex: eyJhbGciOiJIUzI1NiIsInR5cCI6..." class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-2 text-xs text-white font-mono focus:outline-none focus:border-tactical-accent">
+        </div>
+
+        <div id="supabaseConnectFeedback" class="text-[11px] p-2.5 rounded-lg bg-slate-800/80 border border-slate-700 hidden"></div>
+      </div>
+
+      <div class="flex gap-2 pt-2 border-t border-slate-800">
+        <button onclick="disconnectSupabase()" class="py-2.5 px-3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs rounded-xl border border-slate-700">
+          Usar Offline
+        </button>
+        <button onclick="saveSupabaseConfig()" class="flex-1 py-2.5 bg-tactical-accent hover:bg-blue-600 text-white font-black text-xs rounded-xl flex items-center justify-center gap-1.5 shadow">
+          <i data-lucide="check" class="w-4 h-4"></i>
+          Salvar & Sincronizar
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================================== -->
+  <!-- MOTOR JAVASCRIPT: LÓGICA, MANUTENÇÃO, CÂMERA & AUDITORIA -->
+  <!-- ============================================================================== -->
+  <script>
+    // 1. BASE DE DADOS INICIAL DA FROTA COM CONTROLE DE ÓLEO E REVISÕES
+    const INITIAL_VEHICLES = [
+      {
+        prefixo: 'VTR-1022',
+        modelo: 'Renault Duster 1.6 Tática',
+        placa: 'BRA-2E19',
+        kmAtual: 78450,
+        status: 'ativa',
+        lastOilKm: 70000,
+        lastOilDate: getRelativeDateStr(-120), // 120 dias atrás
+        intervalKm: 10000,
+        intervalDays: 180, // 6 meses
+        lastDriver: 'Cb PM SILVA',
+        lastDriverBadge: '31.002-4',
+        lastInspectionTime: 'Hoje, 06:45',
+        reportedAltsByLast: [] // Entregou sem avisar alterações
+      },
+      {
+        prefixo: 'VTR-2045',
+        modelo: 'Toyota Hilux 4x4 Policial',
+        placa: 'PMW-5401',
+        kmAtual: 112340,
+        status: 'ativa',
+        lastOilKm: 103000,
+        lastOilDate: getRelativeDateStr(-70),
+        intervalKm: 10000,
+        intervalDays: 180,
+        lastDriver: '3º Sgt PM RODRIGUES',
+        lastDriverBadge: '28.115-9',
+        lastInspectionTime: 'Ontem, 19:10',
+        reportedAltsByLast: ['luz_freio'] // Já havia avisado de luz de freio
+      },
+      {
+        prefixo: 'VTR-3110',
+        modelo: 'Toyota Corolla Sedan Patrulha',
+        placa: 'RQX-9912',
+        kmAtual: 49800,
+        status: 'ativa',
+        lastOilKm: 40000,
+        lastOilDate: getRelativeDateStr(-190), // Data ultrapassada (vencida por tempo)
+        intervalKm: 10000,
+        intervalDays: 180,
+        lastDriver: 'Cb PM COSTA',
+        lastDriverBadge: '33.450-1',
+        lastInspectionTime: 'Ontem, 07:00',
+        reportedAltsByLast: []
+      },
+      {
+        prefixo: 'VTR-4008',
+        modelo: 'Chevrolet Trailblazer Choque',
+        placa: 'GOI-8821',
+        kmAtual: 93100,
+        status: 'manutencao',
+        lastOilKm: 82000, // Vencido por KM (ultrapassou 10.000 km)
+        lastOilDate: getRelativeDateStr(-90),
+        intervalKm: 10000,
+        intervalDays: 180,
+        lastDriver: '1º Sgt PM MARQUES',
+        lastDriverBadge: '22.901-7',
+        lastInspectionTime: 'Há 3 dias',
+        reportedAltsByLast: []
+      }
+    ];
+
+    // ITENS PADRÃO DO CHECKLIST (Customizáveis no Painel Admin)
+    const DEFAULT_CHECKLIST = [
+      { id: 'oleo', category: 'Mecânica & Fluidos', title: 'Nível do Óleo do Motor (Vareta)', requirePhoto: true },
+      { id: 'radiador', category: 'Mecânica & Fluidos', title: 'Água / Fluido do Radiador', requirePhoto: true },
+      { id: 'freio_fluido', category: 'Mecânica & Fluidos', title: 'Fluido de Freio', requirePhoto: false },
+      { id: 'giroflex', category: 'Sinalizadores & Elétrica', title: 'Giroflex / Barra de Luzes', requirePhoto: true },
+      { id: 'sirene', category: 'Sinalizadores & Elétrica', title: 'Sirene & Buzina', requirePhoto: false },
+      { id: 'farois', category: 'Sinalizadores & Elétrica', title: 'Faróis (Alto, Baixo e Milha)', requirePhoto: true },
+      { id: 'luz_freio', category: 'Sinalizadores & Elétrica', title: 'Luzes de Freio', requirePhoto: true },
+      { id: 'setas', category: 'Sinalizadores & Elétrica', title: 'Setas e Pisca-Alerta', requirePhoto: true },
+      { id: 'pneus_diant', category: 'Rodagem & Pneus', title: 'Pneus Dianteiros (Calibragem e Sulco)', requirePhoto: true },
+      { id: 'pneus_tras', category: 'Rodagem & Pneus', title: 'Pneus Traseiros (Calibragem e Sulco)', requirePhoto: true },
+      { id: 'estepe', category: 'Rodagem & Pneus', title: 'Estepe / Pneu Reserva', requirePhoto: true },
+      { id: 'ferramentas', category: 'Rodagem & Pneus', title: 'Macaco, Chave de Roda e Triângulo', requirePhoto: false },
+      { id: 'limpeza_int', category: 'Higiene & Interior', title: 'Limpeza Interna (Bancos e Assoalho)', requirePhoto: true },
+      { id: 'camburao', category: 'Higiene & Interior', title: 'Compartimento de Presos / Travas', requirePhoto: true },
+      { id: 'radio_vtr', category: 'Equipamentos Táticos', title: 'Rádio Comunicador (VHF/TETRA)', requirePhoto: false },
+      { id: 'suporte_armas', category: 'Equipamentos Táticos', title: 'Suporte & Travas de Armas Longas', requirePhoto: true }
+    ];
+
+    // AVISOS DA VIATURA
+    let vehicleNotices = {
+      'VTR-1022': [
+        'Revisão preventiva agendada para segunda-feira.',
+        'Pneu dianteiro direito calibrar com 32 PSI.'
+      ],
+      'VTR-2045': [
+        'Acionar tração 4x4 somente com a viatura totalmente parada.'
+      ],
+      'VTR-3110': [
+        'Atenção: Óleo do motor vencido por tempo. Encaminhar para a oficina da unidade.'
+      ]
+    };
+
+    // SINISTROS NÃO NOTIFICADOS REGISTRADOS (Cadeia de Responsabilidade)
+    let nonNotifiedDamages = [
+      {
+        id: 'sin_1',
+        prefixo: 'VTR-1022',
+        itemTitle: 'Luz de Freio Esquerda Trincada',
+        responsibleDriver: 'Cb PM SILVA',
+        responsibleBadge: '31.002-4',
+        reportingDriver: 'Cb PM ALMEIDA',
+        date: 'Hoje, 07:15',
+        status: 'Aguardando Despacho',
+        photo: null
+      }
+    ];
+
+    // ESTADO DO WIZARD DO MOTORISTA
+    let currentWizardStep = 1;
+    let driverAnswers = {};
+    let photos4Sides = { Frente: null, Traseira: null, Esquerda: null, Direita: null };
+    let signatureCanvas, sigCtx, isDrawing = false;
+    let selectedVehicleForOilModal = null;
+
+    // CLIENTE SUPABASE & STATUS EM NUVEM
+    let supabaseClient = null;
+    const DEFAULT_SUPABASE_URL = 'https://xwfepsiiwukkuragnulb.supabase.co';
+    const DEFAULT_SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh3ZmVwc2lpd3Vra3VyYWdudWxiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI3ODE0NzMsImV4cCI6MjEwODM1NzQ3M30.GBIqsT1jM3YnWT3FgRihe70kZLJwOo-UIROFOyegxIo';
+
+    function initSupabaseClient() {
+      let url = DEFAULT_SUPABASE_URL;
+      let key = DEFAULT_SUPABASE_KEY;
+
+      const saved = localStorage.getItem('sischeck_supabase_config');
+      if (saved) {
+        try {
+          const cfg = JSON.parse(saved);
+          if (cfg.url && cfg.key) {
+            url = cfg.url;
+            key = cfg.key;
+          }
+        } catch(e) {}
+      }
+
+      if (url && key && window.supabase) {
+        try {
+          supabaseClient = window.supabase.createClient(url, key);
+          updateSupabaseStatusUI(true);
+          syncFromSupabase();
+          return;
+        } catch(e) {
+          console.warn('Erro ao inicializar Supabase:', e);
+        }
+      }
+      updateSupabaseStatusUI(false);
+    }
+
+    function updateSupabaseStatusUI(connected) {
+      const dot = document.getElementById('supabaseStatusDot');
+      const text = document.getElementById('supabaseStatusText');
+      if (dot && text) {
+        if (connected) {
+          dot.className = 'w-2 h-2 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400';
+          text.innerText = 'Supabase Online';
+        } else {
+          dot.className = 'w-2 h-2 rounded-full bg-slate-500';
+          text.innerText = 'Modo Local';
+        }
+      }
+    }
+
+    function openModalSupabaseConfig() {
+      const saved = localStorage.getItem('sischeck_supabase_config');
+      if (saved) {
+        try {
+          const cfg = JSON.parse(saved);
+          document.getElementById('cfgSupabaseUrl').value = cfg.url || '';
+          document.getElementById('cfgSupabaseKey').value = cfg.key || '';
+        } catch(e) {}
+      }
+      document.getElementById('modalSupabaseConfig').classList.remove('hidden');
+      lucide.createIcons();
+    }
+
+    function closeModalSupabaseConfig() {
+      document.getElementById('modalSupabaseConfig').classList.add('hidden');
+    }
+
+    async function saveSupabaseConfig() {
+      const url = document.getElementById('cfgSupabaseUrl').value.trim();
+      const key = document.getElementById('cfgSupabaseKey').value.trim();
+      const feedback = document.getElementById('supabaseConnectFeedback');
+
+      if (!url || !key) {
+        alert('Informe a Project URL e a anon key do seu Supabase.');
+        return;
+      }
+
+      feedback.classList.remove('hidden');
+      feedback.innerHTML = '<span class="text-amber-400 flex items-center gap-1.5"><i data-lucide="loader-2" class="w-3.5 h-3.5 animate-spin"></i> Testando conexão com o banco...</span>';
+      lucide.createIcons();
+
+      try {
+        const client = window.supabase.createClient(url, key);
+        const { data, error } = await client.from('viaturas').select('prefixo').limit(1);
+
+        if (error) {
+          feedback.innerHTML = `<span class="text-red-400">Erro na conexão: ${error.message}. Verifique se rodou o script supabase_schema.sql no SQL Editor.</span>`;
+          return;
+        }
+
+        // Sucesso!
+        supabaseClient = client;
+        localStorage.setItem('sischeck_supabase_config', JSON.stringify({ url, key }));
+        updateSupabaseStatusUI(true);
+        feedback.innerHTML = '<span class="text-emerald-400 font-bold">Conexão estabelecida com sucesso! Sincronizando dados...</span>';
+        
+        await syncFromSupabase();
+        setTimeout(() => {
+          closeModalSupabaseConfig();
+          feedback.classList.add('hidden');
+        }, 1200);
+
+      } catch (err) {
+        feedback.innerHTML = `<span class="text-red-400">Falha ao conectar: ${err.message}</span>`;
+      }
+    }
+
+    function disconnectSupabase() {
+      localStorage.removeItem('sischeck_supabase_config');
+      supabaseClient = null;
+      updateSupabaseStatusUI(false);
+      closeModalSupabaseConfig();
+      alert('Aplicativo operando em Modo Local (Offline).');
+    }
+
+    async function syncFromSupabase() {
+      if (!supabaseClient) return;
+      try {
+        // Busca viaturas do Supabase
+        const { data: vtrs } = await supabaseClient.from('viaturas').select('*');
+        if (vtrs && vtrs.length > 0) {
+          const mapped = vtrs.map(v => ({
+            prefixo: v.prefixo,
+            modelo: v.modelo,
+            placa: v.placa,
+            kmAtual: v.km_atual,
+            status: v.status_operacional || 'ativa',
+            lastOilKm: v.km_ultima_troca_oleo || 0,
+            lastOilDate: v.data_ultima_troca_oleo || new Date().toISOString().split('T')[0],
+            intervalKm: v.intervalo_troca_oleo_km || 10000,
+            intervalDays: v.intervalo_troca_oleo_dias || 180,
+            lastDriver: 'Supabase Sync',
+            lastDriverBadge: '---',
+            lastInspectionTime: 'Nuvem',
+            reportedAltsByLast: []
+          }));
+          saveFleetVehicles(mapped);
+          populatePrefixSelects();
+          renderFleetDashboard();
+        }
+      } catch (e) {}
+    }
+
+    // INICIALIZAÇÃO
+    window.addEventListener('DOMContentLoaded', () => {
+      initStorage();
+      initSupabaseClient();
+      populatePrefixSelects();
+      onDriverVehicleChange();
+      renderDriverChecklist();
+      initSignatureCanvas();
+      renderFleetDashboard();
+      renderAdminChecklistList();
+      renderAdminSinistros();
+      lucide.createIcons();
+    });
+
+    function initStorage() {
+      if (!localStorage.getItem('sischeck_fleet_vehicles')) {
+        localStorage.setItem('sischeck_fleet_vehicles', JSON.stringify(INITIAL_VEHICLES));
+      }
+      if (!localStorage.getItem('sischeck_checklist_items')) {
+        localStorage.setItem('sischeck_checklist_items', JSON.stringify(DEFAULT_CHECKLIST));
+      }
+    }
+
+    function getFleetVehicles() {
+      try {
+        return JSON.parse(localStorage.getItem('sischeck_fleet_vehicles')) || INITIAL_VEHICLES;
+      } catch (e) {
+        return INITIAL_VEHICLES;
+      }
+    }
+
+    function saveFleetVehicles(vehicles) {
+      localStorage.setItem('sischeck_fleet_vehicles', JSON.stringify(vehicles));
+    }
+
+    function getChecklistItems() {
+      try {
+        return JSON.parse(localStorage.getItem('sischeck_checklist_items')) || DEFAULT_CHECKLIST;
+      } catch (e) {
+        return DEFAULT_CHECKLIST;
+      }
+    }
+
+    function saveChecklistItems(items) {
+      localStorage.setItem('sischeck_checklist_items', JSON.stringify(items));
+    }
+
+    // CALCULA DATA RELATIVA
+    function getRelativeDateStr(offsetDays) {
+      const d = new Date();
+      d.setDate(d.getDate() + offsetDays);
+      return d.toISOString().split('T')[0];
+    }
+
+    // ==============================================================================
+    // MOTOR DE CÁLCULO DE TROCA DE ÓLEO & REVISÕES (TEMPO E/OU KM)
+    // ==============================================================================
+    function calculateOilStatus(vtr, currentKm) {
+      const kmUsed = currentKm - vtr.lastOilKm;
+      const kmRemaining = vtr.intervalKm - kmUsed;
+
+      // Cálculo de dias
+      const lastDate = new Date(vtr.lastOilDate);
+      const today = new Date();
+      const diffTime = Math.abs(today - lastDate);
+      const daysPassed = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+      const daysRemaining = vtr.intervalDays - daysPassed;
+
+      // Percentual de vida útil (o que estiver pior: km ou dias)
+      const kmPct = (kmUsed / vtr.intervalKm) * 100;
+      const daysPct = (daysPassed / vtr.intervalDays) * 100;
+      const worstPct = Math.max(kmPct, daysPct);
+      const healthPct = Math.max(0, Math.min(100, Math.round(100 - worstPct)));
+
+      let status = 'OK'; // 'OK' | 'ALERTA' | 'VENCIDO'
+      let reason = '';
+
+      if (kmRemaining <= 0 || daysRemaining <= 0) {
+        status = 'VENCIDO';
+        if (kmRemaining <= 0 && daysRemaining <= 0) {
+          reason = `Vencido por KM (${Math.abs(kmRemaining)} km ultrapassados) e por Tempo (${Math.abs(daysRemaining)} dias vencidos)`;
+        } else if (kmRemaining <= 0) {
+          reason = `Vencido por KM (${Math.abs(kmRemaining)} km ultrapassados do limite)`;
+        } else {
+          reason = `Vencido por Tempo (${Math.abs(daysRemaining)} dias além dos 6 meses)`;
+        }
+      } else if (kmRemaining <= 1000 || daysRemaining <= 20) {
+        status = 'ALERTA';
+        reason = `Próximo da troca: restam ${kmRemaining} KM e ${daysRemaining} dias`;
+      } else {
+        status = 'OK';
+        reason = `Em dia: restam ${kmRemaining} KM ou ${daysRemaining} dias`;
+      }
+
+      return {
+        kmRemaining,
+        daysRemaining,
+        daysPassed,
+        healthPct,
+        status,
+        reason,
+        nextOilKm: vtr.lastOilKm + vtr.intervalKm,
+        nextOilDateStr: new Date(lastDate.getTime() + vtr.intervalDays * 24 * 60 * 60 * 1000).toLocaleDateString('pt-BR')
+      };
+    }
+
+    // ALTERAÇÃO DE TELA (MOTORISTA vs CHEFE DE TRANSPORTE)
+    function switchMainRole(role) {
+      const driverSection = document.getElementById('driverSection');
+      const adminSection = document.getElementById('adminSection');
+      const btnDriver = document.getElementById('btnRoleDriver');
+      const btnAdmin = document.getElementById('btnRoleAdmin');
+
+      if (role === 'driver') {
+        driverSection.classList.remove('hidden');
+        adminSection.classList.add('hidden');
+        btnDriver.className = 'px-2.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 bg-tactical-gold text-slate-950 shadow-sm';
+        btnAdmin.className = 'px-2.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 text-slate-400 hover:text-white';
+        renderDriverChecklist();
+        onDriverVehicleChange();
+      } else {
+        driverSection.classList.add('hidden');
+        adminSection.classList.remove('hidden');
+        btnDriver.className = 'px-2.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 text-slate-400 hover:text-white';
+        btnAdmin.className = 'px-2.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 bg-tactical-gold text-slate-950 shadow-sm';
+        renderFleetDashboard();
+        renderAdminChecklistList();
+        renderAdminSinistros();
+      }
+      lucide.createIcons();
+    }
+
+    function switchAdminTab(tab) {
+      document.getElementById('adminTabFleet').classList.toggle('hidden', tab !== 'fleet');
+      document.getElementById('adminTabNewVtr').classList.toggle('hidden', tab !== 'newVtr');
+      document.getElementById('adminTabAudits').classList.toggle('hidden', tab !== 'audits');
+      document.getElementById('adminTabItems').classList.toggle('hidden', tab !== 'items');
+      document.getElementById('adminTabNotices').classList.toggle('hidden', tab !== 'notices');
+
+      const tabs = ['fleet', 'newVtr', 'audits', 'items', 'notices'];
+      tabs.forEach(t => {
+        const btn = document.getElementById('tabBtn' + t.charAt(0).toUpperCase() + t.slice(1));
+        if (btn) {
+          if (t === tab) {
+            btn.className = 'px-3 py-2 text-xs font-bold rounded-lg bg-tactical-accent text-white shrink-0 transition flex items-center gap-1.5 shadow';
+          } else {
+            btn.className = 'px-3 py-2 text-xs font-bold rounded-lg text-slate-400 hover:text-white shrink-0 transition flex items-center gap-1.5';
+          }
+        }
+      });
+      lucide.createIcons();
+    }
+
+    // PREENCHE DROPDOWNS DE VIATURAS
+    function populatePrefixSelects() {
+      const vehicles = getFleetVehicles();
+      const driverSelect = document.getElementById('vehiclePrefixSelect');
+      const noticeSelect = document.getElementById('adminNoticeTargetVtr');
+
+      driverSelect.innerHTML = vehicles.map(v => `<option value="${v.prefixo}">${v.prefixo} (${v.modelo})</option>`).join('');
+      noticeSelect.innerHTML = vehicles.map(v => `<option value="${v.prefixo}">${v.prefixo} (${v.modelo})</option>`).join('');
+    }
+
+    // AO MUDAR A VIATURA NO APLICATIVO DO MOTORISTA
+    function onDriverVehicleChange() {
+      const prefix = document.getElementById('vehiclePrefixSelect').value;
+      const vehicles = getFleetVehicles();
+      const vtr = vehicles.find(v => v.prefixo === prefix) || vehicles[0];
+
+      document.getElementById('vehicleKmInput').value = vtr.kmAtual;
+      document.getElementById('vtrNoticePrefixLabel').innerText = vtr.prefixo;
+
+      // Avisos
+      const notices = vehicleNotices[vtr.prefixo] || ['Nenhum aviso ativo para esta viatura.'];
+      document.getElementById('vtrNoticesContainer').innerHTML = notices.map(n => `
+        <div class="flex items-start gap-2 bg-slate-900/60 p-2.5 rounded-lg border border-amber-500/20">
+          <i data-lucide="info" class="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5"></i>
+          <span>${n}</span>
+        </div>
+      `).join('');
+
+      // Motorista anterior
+      document.getElementById('labelPrevDriverName').innerText = `${vtr.lastDriver} (Mat. ${vtr.lastDriverBadge})`;
+      document.getElementById('labelPrevTime').innerText = vtr.lastInspectionTime;
+      document.getElementById('labelPrevKm').innerText = `${vtr.kmAtual} KM`;
+      
+      const altText = (vtr.reportedAltsByLast && vtr.reportedAltsByLast.length > 0)
+        ? `Alterações registradas: ${vtr.reportedAltsByLast.join(', ')}`
+        : 'Nenhuma alteração informada. Viatura entregue 100% OK.';
+      document.getElementById('labelPrevAlterations').innerText = altText;
+
+      renderOilStatusCard(vtr, vtr.kmAtual);
+      lucide.createIcons();
+    }
+
+    function onKmInputChange() {
+      const prefix = document.getElementById('vehiclePrefixSelect').value;
+      const vehicles = getFleetVehicles();
+      const vtr = vehicles.find(v => v.prefixo === prefix);
+      const km = parseInt(document.getElementById('vehicleKmInput').value) || (vtr ? vtr.kmAtual : 0);
+      if (vtr) {
+        renderOilStatusCard(vtr, km);
+      }
+    }
+
+    // RENDERIZA O CARD DE STATUS DO ÓLEO NO PASSO 1 DO MOTORISTA
+    function renderOilStatusCard(vtr, currentKm) {
+      const oil = calculateOilStatus(vtr, currentKm);
+      const card = document.getElementById('oilStatusCard');
+
+      if (oil.status === 'VENCIDO') {
+        card.className = 'bg-red-500/15 border-2 border-red-500 rounded-2xl p-3.5 shadow-lg space-y-2';
+        card.innerHTML = `
+          <div class="flex items-center justify-between text-xs font-black uppercase text-red-400">
+            <span class="flex items-center gap-1.5">
+              <i data-lucide="alert-triangle" class="w-4 h-4 text-red-500 animate-pulse"></i>
+              ATENÇÃO: ÓLEO DO MOTOR VENCIDO!
+            </span>
+            <span class="text-[10px] bg-red-500 text-white px-2 py-0.5 rounded font-mono">0% ÚTIL</span>
+          </div>
+          <p class="text-xs text-red-200">${oil.reason}</p>
+          <div class="text-[10px] text-red-300 bg-red-950/60 p-2 rounded-lg border border-red-500/30">
+            Próxima troca era prevista para: <b>${oil.nextOilKm} KM</b> ou <b>${oil.nextOilDateStr}</b>.<br>
+            <strong>Orientação:</strong> Notifique o Encarregado de Transporte antes de assumir missões longas.
+          </div>
+        `;
+      } else if (oil.status === 'ALERTA') {
+        card.className = 'bg-amber-500/15 border border-amber-500 rounded-2xl p-3.5 shadow-md space-y-2';
+        card.innerHTML = `
+          <div class="flex items-center justify-between text-xs font-black uppercase text-amber-400">
+            <span class="flex items-center gap-1.5">
+              <i data-lucide="droplet" class="w-4 h-4 text-amber-400"></i>
+              ÓLEO DO MOTOR PRÓXIMO DA TROCA
+            </span>
+            <span class="text-[10px] bg-amber-500 text-slate-950 px-2 py-0.5 rounded font-mono font-bold">${oil.healthPct}% ÚTIL</span>
+          </div>
+          <p class="text-xs text-amber-200">${oil.reason}</p>
+          <div class="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+            <div class="bg-amber-500 h-full" style="width: ${oil.healthPct}%"></div>
+          </div>
+        `;
+      } else {
+        card.className = 'bg-emerald-500/10 border border-emerald-500/30 rounded-2xl p-3.5 shadow-sm space-y-1.5';
+        card.innerHTML = `
+          <div class="flex items-center justify-between text-xs font-black uppercase text-emerald-400">
+            <span class="flex items-center gap-1.5">
+              <i data-lucide="check-circle" class="w-4 h-4 text-emerald-400"></i>
+              Óleo do Motor & Revisão em Dia
+            </span>
+            <span class="text-[10px] text-emerald-400 font-mono font-bold">${oil.healthPct}% vida útil</span>
+          </div>
+          <p class="text-[11px] text-slate-300">${oil.reason}</p>
+        `;
+      }
+      lucide.createIcons();
+    }
+
+    // CAPTURA DAS 4 FOTOS COM CARIMBO
+    function captureSidePhoto(event, side) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const tempImg = new Image();
+        tempImg.onload = function() {
+          const canvas = document.createElement('canvas');
+          const maxDim = 1200;
+          let w = tempImg.width;
+          let h = tempImg.height;
+
+          if (w > maxDim || h > maxDim) {
+            if (w > h) { h = Math.round((h * maxDim) / w); w = maxDim; }
+            else { w = Math.round((w * maxDim) / h); h = maxDim; }
+          }
+          canvas.width = w; canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(tempImg, 0, 0, w, h);
+
+          // Carimbo tático
+          const prefix = document.getElementById('vehiclePrefixSelect').value;
+          const km = document.getElementById('vehicleKmInput').value;
+          const driver = document.getElementById('driverWarName').value;
+          const nowStr = new Date().toLocaleString('pt-BR');
+
+          ctx.fillStyle = 'rgba(6, 10, 23, 0.85)';
+          ctx.fillRect(0, h - 55, w, 55);
+
+          ctx.fillStyle = '#f59e0b';
+          ctx.font = 'bold 18px monospace';
+          ctx.fillText(`SISCHECK-VTR | ${prefix} | LADO: ${side.toUpperCase()} | KM: ${km}`, 16, h - 30);
+
+          ctx.fillStyle = '#ffffff';
+          ctx.font = '14px sans-serif';
+          ctx.fillText(`CONDUTOR: ${driver} | DATA: ${nowStr}`, 16, h - 10);
+
+          const finalUrl = canvas.toDataURL('image/jpeg', 0.82);
+          photos4Sides[side] = finalUrl;
+
+          document.getElementById(`img${side}`).src = finalUrl;
+          document.getElementById(`img${side}`).classList.remove('hidden');
+          document.getElementById(`ph${side}`).classList.add('hidden');
+        };
+        tempImg.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    // RENDERIZA O CHECKLIST DINÂMICO
+    function renderDriverChecklist() {
+      const container = document.getElementById('dynamicChecklistContainer');
+      const items = getChecklistItems();
+
+      // Agrupa por categoria
+      const cats = {};
+      items.forEach(it => {
+        if (!cats[it.category]) cats[it.category] = [];
+        cats[it.category].push(it);
+      });
+
+      let html = '';
+      for (const [catName, catItems] of Object.entries(cats)) {
+        html += `
+          <div class="space-y-2 pt-1">
+            <div class="text-[10px] font-black uppercase text-tactical-accent tracking-wider flex items-center gap-1.5 px-1">
+              <span class="w-1.5 h-1.5 rounded-full bg-tactical-accent"></span>
+              ${catName}
+            </div>
+        `;
+
+        catItems.forEach(it => {
+          const ans = driverAnswers[it.id] || { status: 'OK', comment: '', photo: null };
+          const isOk = ans.status === 'OK';
+          const isAlt = ans.status === 'ALTERACAO';
+
+          html += `
+            <div class="bg-slate-900 border ${isAlt ? 'border-red-500/70 bg-red-950/15' : 'border-slate-800'} rounded-2xl p-3 shadow-sm transition">
+              <div class="flex items-center justify-between gap-2">
+                <div class="flex-1 pr-2">
+                  <span class="text-xs font-bold text-white block leading-snug">${it.title}</span>
+                  ${it.requirePhoto ? '<span class="text-[9px] text-amber-400 font-bold uppercase">Foto obrigatória na avaria</span>' : ''}
+                </div>
+
+                <div class="flex items-center gap-1.5 shrink-0">
+                  <button type="button" onclick="setChecklistStatus('${it.id}', 'OK')" class="px-3 py-1.5 rounded-lg text-xs font-bold border transition ${isOk ? 'bg-emerald-500 text-slate-950 border-emerald-400 font-black' : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'}">
+                    OK
+                  </button>
+                  <button type="button" onclick="setChecklistStatus('${it.id}', 'ALTERACAO')" class="px-2.5 py-1.5 rounded-lg text-xs font-bold border transition ${isAlt ? 'bg-red-500 text-white border-red-400 font-black' : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'}">
+                    Alteração
+                  </button>
+                </div>
+              </div>
+
+              <!-- Seção de Avaria Expandida -->
+              <div class="${isAlt ? 'block' : 'hidden'} mt-2.5 pt-2.5 border-t border-red-500/30 space-y-2">
+                <input type="text" value="${ans.comment || ''}" oninput="setChecklistComment('${it.id}', this.value)" placeholder="Descreva o defeito/avaria com clareza..." class="w-full bg-slate-950 border border-red-500/40 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-red-400">
+
+                <div class="flex items-center gap-2">
+                  <label class="flex-1 bg-red-500/20 hover:bg-red-500/30 border border-red-500/50 rounded-lg py-2 px-3 text-[10px] font-bold text-red-200 flex items-center justify-center gap-1.5 cursor-pointer transition">
+                    <i data-lucide="camera" class="w-3.5 h-3.5 text-red-400"></i>
+                    <span>${ans.photo ? 'Foto da Avaria Anexada' : 'Adicionar Foto da Avaria'}</span>
+                    <input type="file" accept="image/*" capture="environment" class="sr-only" onchange="handleItemDamagePhoto(event, '${it.id}')">
+                  </label>
+                  ${ans.photo ? `
+                    <div class="w-9 h-9 rounded-lg border border-red-400 overflow-hidden shrink-0 shadow">
+                      <img src="${ans.photo}" class="w-full h-full object-cover">
+                    </div>
+                  ` : ''}
+                </div>
+              </div>
+            </div>
+          `;
+        });
+        html += `</div>`;
+      }
+      container.innerHTML = html;
+      lucide.createIcons();
+    }
+
+    function setChecklistStatus(id, st) {
+      if (!driverAnswers[id]) driverAnswers[id] = { status: st, comment: '', photo: null };
+      else driverAnswers[id].status = st;
+      renderDriverChecklist();
+    }
+
+    function setChecklistComment(id, text) {
+      if (!driverAnswers[id]) driverAnswers[id] = { status: 'ALTERACAO', comment: text, photo: null };
+      else driverAnswers[id].comment = text;
+    }
+
+    function handleItemDamagePhoto(event, id) {
+      const file = event.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        if (!driverAnswers[id]) driverAnswers[id] = { status: 'ALTERACAO', comment: '', photo: null };
+        driverAnswers[id].photo = e.target.result;
+        renderDriverChecklist();
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function markAllChecklistOk() {
+      const items = getChecklistItems();
+      items.forEach(it => {
+        driverAnswers[it.id] = { status: 'OK', comment: '', photo: null };
+      });
+      renderDriverChecklist();
+    }
+
+    // WIZARD NAVIGATION
+    function nextWizardStep() {
+      if (currentWizardStep === 1) {
+        const km = document.getElementById('vehicleKmInput').value;
+        const phone = document.getElementById('dutyPhoneInput').value;
+        if (!km || !phone) {
+          alert('Preencha o KM atual e o número do celular cautelado da escala.');
+          return;
+        }
+        setWizardStep(2);
+      } else if (currentWizardStep === 2) {
+        setWizardStep(3);
+      } else if (currentWizardStep === 3) {
+        processAuditAndReview();
+        setWizardStep(4);
+      } else if (currentWizardStep === 4) {
+        finalizeDriverInspection();
+      }
+    }
+
+    function prevWizardStep() {
+      if (currentWizardStep > 1) {
+        setWizardStep(currentWizardStep - 1);
+      }
+    }
+
+    function setWizardStep(step) {
+      currentWizardStep = step;
+
+      document.getElementById('step1').classList.toggle('hidden', currentWizardStep !== 1);
+      document.getElementById('step2').classList.toggle('hidden', currentWizardStep !== 2);
+      document.getElementById('step3').classList.toggle('hidden', currentWizardStep !== 3);
+      document.getElementById('step4').classList.toggle('hidden', currentWizardStep !== 4);
+
+      document.getElementById('btnPrevStep').classList.toggle('hidden', currentWizardStep === 1);
+
+      const titles = [
+        'Passo 1 de 4: Viatura & Escala',
+        'Passo 2 de 4: Fotos dos 4 Lados',
+        'Passo 3 de 4: Itens de Vistoria',
+        'Passo 4 de 4: Auditoria & Assinatura'
+      ];
+      const percentages = ['25%', '50%', '75%', '100%'];
+      const widths = ['w-1/4', 'w-2/4', 'w-3/4', 'w-full'];
+
+      document.getElementById('stepTitle').innerText = titles[currentWizardStep - 1];
+      document.getElementById('stepPercent').innerText = percentages[currentWizardStep - 1];
+      document.getElementById('progressBar').className = `bg-gradient-to-r from-tactical-accent to-tactical-gold h-full rounded-full transition-all duration-300 ${widths[currentWizardStep - 1]}`;
+
+      const nextLabel = document.getElementById('btnNextStepLabel');
+      if (currentWizardStep === 1) nextLabel.innerText = 'Avançar para Fotos';
+      else if (currentWizardStep === 2) nextLabel.innerText = 'Avançar para Vistoria';
+      else if (currentWizardStep === 3) nextLabel.innerText = 'Revisar & Assinar';
+      else if (currentWizardStep === 4) nextLabel.innerText = 'Finalizar & Travar Vistoria';
+
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      lucide.createIcons();
+    }
+
+    // AUDITORIA E CRUZAMENTO COM TURNO ANTERIOR
+    function processAuditAndReview() {
+      const prefix = document.getElementById('vehiclePrefixSelect').value;
+      const vehicles = getFleetVehicles();
+      const vtr = vehicles.find(v => v.prefixo === prefix) || vehicles[0];
+      const items = getChecklistItems();
+
+      const currentAlts = [];
+      items.forEach(it => {
+        const ans = driverAnswers[it.id];
+        if (ans && ans.status === 'ALTERACAO') {
+          currentAlts.push({ item: it, ans: ans });
+        }
+      });
+
+      // Identifica itens omitidos pelo anterior
+      const previousReported = vtr.reportedAltsByLast || [];
+      const omittedByPrevious = currentAlts.filter(c => !previousReported.includes(c.item.id));
+
+      const banner = document.getElementById('auditResponsibilityBanner');
+      if (omittedByPrevious.length > 0) {
+        banner.className = 'bg-red-500/15 border-2 border-red-500 rounded-2xl p-3.5 shadow-xl space-y-2';
+        banner.innerHTML = `
+          <div class="flex items-center gap-2 text-red-400 font-black text-xs uppercase tracking-wider">
+            <i data-lucide="alert-octagon" class="w-5 h-5 text-red-500 animate-pulse"></i>
+            AVARIA OMITIDA PELO MOTORISTA ANTERIOR DETECTADA!
+          </div>
+
+          <div class="p-2.5 bg-red-950/70 rounded-xl border border-red-500/30 text-xs text-red-200 space-y-1.5">
+            <div class="text-[11px]">
+              Motorista Anterior: <b class="text-tactical-gold">${vtr.lastDriver} (Mat. ${vtr.lastDriverBadge})</b>
+            </div>
+            <div class="font-bold text-[11px] text-white">Alterações Não Comunicadas por Ele:</div>
+            <ul class="list-disc pl-4 space-y-0.5 text-[11px]">
+              ${omittedByPrevious.map(o => `<li><b>${o.item.title}</b>: ${o.ans.comment || 'Sem observação'}</li>`).join('')}
+            </ul>
+          </div>
+
+          <p class="text-[10px] text-red-300 font-semibold flex items-center gap-1">
+            <i data-lucide="shield-alert" class="w-3.5 h-3.5 text-red-400"></i>
+            Este registro resguarda o seu turno e notifica formalmente o Chefe de Transporte para apuração.
+          </p>
+        `;
+      } else {
+        banner.className = 'bg-emerald-500/10 border border-emerald-500/40 rounded-2xl p-3.5 shadow-md space-y-1';
+        banner.innerHTML = `
+          <div class="flex items-center gap-2 text-emerald-400 font-bold text-xs uppercase tracking-wider">
+            <i data-lucide="check-circle" class="w-4 h-4"></i>
+            Conformidade com a Passagem Anterior
+          </div>
+          <p class="text-xs text-slate-300">
+            Nenhuma avaria oculta detectada. O estado da viatura confere com o que foi entregue por <b>${vtr.lastDriver}</b>.
+          </p>
+        `;
+      }
+
+      // Preenche resumo
+      document.getElementById('reviewVtrPrefix').innerText = prefix;
+      document.getElementById('reviewDriverName').innerText = `${document.getElementById('driverRank').value} ${document.getElementById('driverWarName').value}`;
+      document.getElementById('reviewDriverBadge').innerText = document.getElementById('driverBadge').value;
+      document.getElementById('reviewKm').innerText = `${document.getElementById('vehicleKmInput').value} KM`;
+      document.getElementById('reviewPhone').innerText = document.getElementById('dutyPhoneInput').value;
+
+      const altList = document.getElementById('reviewAlterationsList');
+      if (currentAlts.length === 0) {
+        altList.innerHTML = '<li class="text-emerald-400 font-semibold flex items-center gap-1"><i data-lucide="check" class="w-3 h-3"></i> Viatura 100% OK. Sem alterações.</li>';
+      } else {
+        altList.innerHTML = currentAlts.map(c => `
+          <li class="bg-slate-800/80 p-2 rounded-lg border border-red-500/30 flex items-start justify-between text-xs">
+            <div><b class="text-red-400">${c.item.title}</b>: ${c.ans.comment || 'Sem descrição'}</div>
+            ${c.ans.photo ? '<span class="text-[9px] bg-red-500/20 text-red-300 px-1.5 py-0.5 rounded font-bold shrink-0 ml-1">Foto OK</span>' : ''}
+          </li>
+        `).join('');
+      }
+      lucide.createIcons();
+    }
+
+    // CANVAS DE ASSINATURA
+    function initSignatureCanvas() {
+      signatureCanvas = document.getElementById('signatureCanvas');
+      sigCtx = signatureCanvas.getContext('2d');
+      sigCtx.strokeStyle = '#f59e0b';
+      sigCtx.lineWidth = 2.5;
+      sigCtx.lineCap = 'round';
+
+      function getPos(e) {
+        const rect = signatureCanvas.getBoundingClientRect();
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        return {
+          x: (clientX - rect.left) * (signatureCanvas.width / rect.width),
+          y: (clientY - rect.top) * (signatureCanvas.height / rect.height)
+        };
+      }
+
+      function startDraw(e) {
+        isDrawing = true;
+        document.getElementById('sigPlaceholder').classList.add('hidden');
+        const pos = getPos(e);
+        sigCtx.beginPath();
+        sigCtx.moveTo(pos.x, pos.y);
+      }
+      function draw(e) {
+        if (!isDrawing) return;
+        const pos = getPos(e);
+        sigCtx.lineTo(pos.x, pos.y);
+        sigCtx.stroke();
+      }
+      function stopDraw() { isDrawing = false; }
+
+      signatureCanvas.addEventListener('mousedown', startDraw);
+      signatureCanvas.addEventListener('mousemove', draw);
+      window.addEventListener('mouseup', stopDraw);
+
+      signatureCanvas.addEventListener('touchstart', startDraw, { passive: true });
+      signatureCanvas.addEventListener('touchmove', draw, { passive: true });
+      window.addEventListener('touchend', stopDraw);
+    }
+
+    function clearSignatureCanvas() {
+      sigCtx.clearRect(0, 0, signatureCanvas.width, signatureCanvas.height);
+      document.getElementById('sigPlaceholder').classList.remove('hidden');
+    }
+
+    // FINALIZAÇÃO DO CHECKLIST DO MOTORISTA
+    function finalizeDriverInspection() {
+      const prefix = document.getElementById('vehiclePrefixSelect').value;
+      const newKm = parseInt(document.getElementById('vehicleKmInput').value) || 0;
+      const driverName = `${document.getElementById('driverRank').value} ${document.getElementById('driverWarName').value}`;
+      const badge = document.getElementById('driverBadge').value;
+      const phone = document.getElementById('dutyPhoneInput').value;
+      const fuel = document.querySelector('input[name="fuelLevel"]:checked')?.value || '3/4';
+      const sigData = signatureCanvas.toDataURL();
+      const protocol = 'VTR-' + Math.floor(100000 + Math.random() * 900000);
+      const timestamp = new Date().toLocaleString('pt-BR');
+
+      // 1. Atualiza o KM da Viatura na base geral da frota
+      const vehicles = getFleetVehicles();
+      const vtrIdx = vehicles.findIndex(v => v.prefixo === prefix);
+      if (vtrIdx !== -1) {
+        const vtr = vehicles[vtrIdx];
+        
+        // Verifica se há novas alterações não informadas pelo anterior
+        const items = getChecklistItems();
+        const currentAlts = [];
+        items.forEach(it => {
+          const ans = driverAnswers[it.id];
+          if (ans && ans.status === 'ALTERACAO') currentAlts.push(it);
+        });
+
+        const prevReported = vtr.reportedAltsByLast || [];
+        const omitted = currentAlts.filter(c => !prevReported.includes(c.id));
+
+        if (omitted.length > 0) {
+          // Grava na lista de sinistros não notificados para o Chefe de Transporte
+          omitted.forEach(om => {
+            nonNotifiedDamages.unshift({
+              id: 'sin_' + Date.now(),
+              prefixo: prefix,
+              itemTitle: om.title,
+              responsibleDriver: vtr.lastDriver,
+              responsibleBadge: vtr.lastDriverBadge,
+              reportingDriver: driverName,
+              date: timestamp,
+              status: 'Aguardando Despacho',
+              photo: driverAnswers[om.id]?.photo || null
+            });
+          });
+          document.getElementById('badgePendingAlerts').innerText = nonNotifiedDamages.length;
+          document.getElementById('badgePendingAlerts').classList.remove('hidden');
+        }
+
+        // Atualiza viatura para o próximo ciclo
+        vtr.kmAtual = newKm;
+        vtr.lastDriver = driverName;
+        vtr.lastDriverBadge = badge;
+        vtr.lastInspectionTime = 'Hoje, ' + new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+        vtr.reportedAltsByLast = currentAlts.map(c => c.id);
+        vehicles[vtrIdx] = vtr;
+        saveFleetVehicles(vehicles);
+
+        // Se conectado ao Supabase, grava em nuvem em tempo real
+        if (supabaseClient) {
+          try {
+            supabaseClient.from('vistorias').insert({
+              protocolo: protocol,
+              prefixo_vtr: prefix,
+              matricula_condutor: badge,
+              km_odometro: newKm,
+              telefone_escala: phone,
+              nivel_combustivel: fuel,
+              status: 'finalizada',
+              assinatura_url: sigData
+            }).then(res => {
+              if (res.error) console.error('Erro ao salvar no Supabase:', res.error);
+              else console.log('Vistoria e auditoria salvas no Supabase!');
+            });
+          } catch(err) {
+            console.error('Erro ao conectar ao Supabase:', err);
+          }
+        }
+      }
+
+      // Exibe Modal de Sucesso
+      const body = document.getElementById('termoContentBody');
+      body.innerHTML = `
+        <div class="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-1.5 font-mono text-[11px]">
+          <div class="flex justify-between text-tactical-gold font-bold">
+            <span>PROTOCOLO: ${protocol}</span>
+            <span>${timestamp}</span>
+          </div>
+          <div>VIATURA: <b>${prefix}</b> | KM REGISTRADO: <b>${newKm}</b></div>
+          <div>CONDUTOR DO DIA: <b>${driverName}</b> (Mat. ${badge})</div>
+          <div>TEL. ESCALA: <b>${phone}</b> | COMB.: <b>${fuel}</b></div>
+        </div>
+
+        <div class="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-emerald-300 text-xs font-semibold flex items-center gap-2">
+          <i data-lucide="shield-check" class="w-5 h-5 text-emerald-400"></i>
+          <span>Vistoria travada com sucesso! Dados sincronizados na base da frota.</span>
+        </div>
+
+        <div>
+          <span class="font-bold text-slate-300 block mb-1">Fotos dos 4 Ângulos Gravadas:</span>
+          <div class="grid grid-cols-4 gap-1.5">
+            ${['Frente', 'Traseira', 'Esquerda', 'Direita'].map(s => `
+              <div class="aspect-square bg-slate-800 rounded border border-slate-700 overflow-hidden flex items-center justify-center text-[9px] text-slate-400 font-bold">
+                ${photos4Sides[s] ? `<img src="${photos4Sides[s]}" class="w-full h-full object-cover">` : s}
+              </div>
+            `).join('')}
+          </div>
+        </div>
+
+        <div>
+          <span class="font-bold text-slate-300 block mb-1">Assinatura Digital Autenticada:</span>
+          <div class="bg-slate-950 p-1 rounded-lg border border-slate-800">
+            <img src="${sigData}" class="h-12 mx-auto">
+          </div>
+        </div>
+      `;
+
+      document.getElementById('modalTermoFinalizado').classList.remove('hidden');
+      lucide.createIcons();
+    }
+
+    function closeModalTermo() {
+      document.getElementById('modalTermoFinalizado').classList.add('hidden');
+      setWizardStep(1);
+    }
+
+    // ==============================================================================
+    // DASHBOARD DO CHEFE DE TRANSPORTE
+    // ==============================================================================
+    function renderFleetDashboard() {
+      const vehicles = getFleetVehicles();
+      const listContainer = document.getElementById('fleetVehiclesList');
+
+      let total = vehicles.length;
+      let active = 0;
+      let warningCount = 0;
+      let criticalCount = 0;
+
+      listContainer.innerHTML = vehicles.map(v => {
+        const oil = calculateOilStatus(v, v.kmAtual);
+        if (v.status === 'ativa' && oil.status !== 'VENCIDO') active++;
+        if (oil.status === 'ALERTA') warningCount++;
+        if (oil.status === 'VENCIDO') criticalCount++;
+
+        let badgeBg = 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30';
+        if (oil.status === 'ALERTA') badgeBg = 'bg-amber-500/10 text-amber-400 border-amber-500/40';
+        if (oil.status === 'VENCIDO') badgeBg = 'bg-red-500/15 text-red-400 border-red-500/50';
+
+        return `
+          <div class="bg-slate-800/80 border border-slate-700/80 rounded-xl p-3.5 space-y-2.5 transition">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-1 border-b border-slate-700/50 pb-2">
+              <div class="flex items-center gap-2">
+                <span class="text-sm font-black text-tactical-gold font-mono">${v.prefixo}</span>
+                <span class="text-xs text-white font-bold">${v.modelo}</span>
+                <span class="text-[10px] text-slate-400 font-mono">(${v.placa})</span>
+              </div>
+              <div class="flex items-center gap-2">
+                <span class="text-[10px] px-2 py-0.5 rounded-full border font-bold uppercase ${badgeBg}">
+                  ${oil.status === 'OK' ? 'Óleo em Dia' : (oil.status === 'ALERTA' ? 'Troca Próxima' : 'Óleo Vencido')}
+                </span>
+                <button onclick="openOilChangeModal('${v.prefixo}')" class="text-[10px] bg-tactical-gold hover:bg-amber-500 text-slate-950 font-black px-2.5 py-1 rounded-lg flex items-center gap-1 transition">
+                  <i data-lucide="wrench" class="w-3 h-3"></i>
+                  Registrar Troca
+                </button>
+              </div>
+            </div>
+
+            <!-- Dados de Odômetro e Desgaste do Óleo -->
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px] text-slate-300">
+              <div>KM Atual: <b class="text-white font-mono">${v.kmAtual.toLocaleString('pt-BR')} KM</b></div>
+              <div>Última Troca: <b class="text-white font-mono">${v.lastOilKm.toLocaleString('pt-BR')} KM</b></div>
+              <div>Próxima Troca: <b class="text-tactical-gold font-mono">${oil.nextOilKm.toLocaleString('pt-BR')} KM</b></div>
+              <div>Previsão Máx.: <b class="text-white">${oil.nextOilDateStr}</b></div>
+            </div>
+
+            <!-- Barra Visual de Vida Útil do Óleo -->
+            <div class="space-y-1">
+              <div class="flex justify-between text-[10px]">
+                <span class="text-slate-400">${oil.reason}</span>
+                <span class="font-mono font-bold ${oil.status === 'VENCIDO' ? 'text-red-400' : (oil.status === 'ALERTA' ? 'text-amber-400' : 'text-emerald-400')}">
+                  ${oil.healthPct}% vida útil
+                </span>
+              </div>
+              <div class="w-full bg-slate-900 h-2 rounded-full overflow-hidden">
+                <div class="h-full rounded-full transition-all duration-300 ${oil.status === 'VENCIDO' ? 'bg-red-500' : (oil.status === 'ALERTA' ? 'bg-amber-500' : 'bg-emerald-500')}" style="width: ${oil.healthPct}%"></div>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      document.getElementById('kpiTotalVehicles').innerText = total;
+      document.getElementById('kpiActiveVehicles').innerText = active;
+      document.getElementById('kpiWarningOil').innerText = warningCount;
+      document.getElementById('kpiCriticalOil').innerText = criticalCount;
+      lucide.createIcons();
+    }
+
+    // CADASTRO DE NOVA VIATURA
+    function handleCreateVehicle(event) {
+      event.preventDefault();
+      const prefix = document.getElementById('newVtrPrefix').value.trim().toUpperCase();
+      const model = document.getElementById('newVtrModel').value.trim();
+      const plate = document.getElementById('newVtrPlate').value.trim().toUpperCase();
+      const kmAtual = parseInt(document.getElementById('newVtrKmAtual').value) || 0;
+      const status = document.getElementById('newVtrStatus').value;
+      const lastOilKm = parseInt(document.getElementById('newVtrLastOilKm').value) || kmAtual;
+      const lastOilDate = document.getElementById('newVtrLastOilDate').value || new Date().toISOString().split('T')[0];
+      const intervalKm = parseInt(document.getElementById('newVtrIntervalKm').value) || 10000;
+      const intervalDays = parseInt(document.getElementById('newVtrIntervalDays').value) || 180;
+
+      const vehicles = getFleetVehicles();
+      if (vehicles.some(v => v.prefixo === prefix)) {
+        alert('Já existe uma viatura cadastrada com este prefixo!');
+        return;
+      }
+
+      vehicles.push({
+        prefixo: prefix,
+        modelo: model,
+        placa: plate,
+        kmAtual: kmAtual,
+        status: status,
+        lastOilKm: lastOilKm,
+        lastOilDate: lastOilDate,
+        intervalKm: intervalKm,
+        intervalDays: intervalDays,
+        lastDriver: 'Sem registro',
+        lastDriverBadge: '---',
+        lastInspectionTime: 'Recém-cadastrada',
+        reportedAltsByLast: []
+      });
+
+      saveFleetVehicles(vehicles);
+      populatePrefixSelects();
+      renderFleetDashboard();
+      document.getElementById('formNewVehicle').reset();
+      alert(`Viatura ${prefix} cadastrada com sucesso!`);
+      switchAdminTab('fleet');
+    }
+
+    // MODAL DE REGISTRAR TROCA DE ÓLEO
+    function openOilChangeModal(prefix) {
+      const vehicles = getFleetVehicles();
+      const vtr = vehicles.find(v => v.prefixo === prefix);
+      if (!vtr) return;
+
+      selectedVehicleForOilModal = vtr;
+      document.getElementById('modalOilPrefix').innerText = `${vtr.prefixo} (${vtr.modelo})`;
+      document.getElementById('modalOilDoneKm').value = vtr.kmAtual;
+      document.getElementById('modalOilDoneDate').value = new Date().toISOString().split('T')[0];
+      document.getElementById('modalOilMaintenance').classList.remove('hidden');
+      lucide.createIcons();
+    }
+
+    function closeModalOil() {
+      document.getElementById('modalOilMaintenance').classList.add('hidden');
+      selectedVehicleForOilModal = null;
+    }
+
+    function confirmOilChangeExecution() {
+      if (!selectedVehicleForOilModal) return;
+      const doneKm = parseInt(document.getElementById('modalOilDoneKm').value) || selectedVehicleForOilModal.kmAtual;
+      const doneDate = document.getElementById('modalOilDoneDate').value || new Date().toISOString().split('T')[0];
+
+      const vehicles = getFleetVehicles();
+      const idx = vehicles.findIndex(v => v.prefixo === selectedVehicleForOilModal.prefixo);
+      if (idx !== -1) {
+        vehicles[idx].lastOilKm = doneKm;
+        vehicles[idx].lastOilDate = doneDate;
+        saveFleetVehicles(vehicles);
+        renderFleetDashboard();
+        closeModalOil();
+        alert(`Troca de óleo da ${selectedVehicleForOilModal.prefixo} registrada com sucesso! Ciclo de manutenção resetado.`);
+      }
+    }
+
+    // LISTA DE SINISTROS OMITIDOS (AUDITORIA DO CHEFE DE TRANSPORTE)
+    function renderAdminSinistros() {
+      const container = document.getElementById('adminSinistrosList');
+      if (nonNotifiedDamages.length === 0) {
+        container.innerHTML = '<p class="text-xs text-slate-500 text-center py-4">Nenhum sinistro omitido pendente de apuração.</p>';
+        return;
+      }
+
+      container.innerHTML = nonNotifiedDamages.map(sin => `
+        <div class="bg-slate-800/90 border border-red-500/40 rounded-xl p-3.5 space-y-2 text-xs">
+          <div class="flex justify-between items-center text-red-400 font-black">
+            <span class="flex items-center gap-1.5">
+              <i data-lucide="alert-circle" class="w-4 h-4"></i>
+              ${sin.prefixo} • ${sin.itemTitle}
+            </span>
+            <span class="text-[10px] bg-red-500/20 text-red-300 px-2 py-0.5 rounded font-bold">${sin.status}</span>
+          </div>
+
+          <div class="grid grid-cols-2 gap-2 text-slate-300 text-[11px] bg-slate-900/70 p-2 rounded-lg">
+            <div>Condutor Responsável Anterior: <b class="text-tactical-gold block">${sin.responsibleDriver} (Mat. ${sin.responsibleBadge})</b></div>
+            <div>Comunicado por: <b class="text-white block">${sin.reportingDriver}</b></div>
+          </div>
+
+          <div class="flex items-center justify-between pt-1">
+            <span class="text-[10px] text-slate-400">${sin.date}</span>
+            <button onclick="alert('Notificação formal gerada para envio à Corregedoria / Sindicância!')" class="text-[10px] bg-red-500/20 hover:bg-red-500/30 text-red-200 border border-red-500/40 px-2.5 py-1 rounded-lg font-bold flex items-center gap-1">
+              <i data-lucide="file-text" class="w-3 h-3"></i>
+              Abrir Sindicância
+            </button>
+          </div>
+        </div>
+      `).join('');
+      lucide.createIcons();
+    }
+
+    // ITENS DO CHECKLIST DINÂMICO NO ADMIN
+    function renderAdminChecklistList() {
+      const items = getChecklistItems();
+      document.getElementById('adminTotalItemsCount').innerText = items.length;
+      const listEl = document.getElementById('adminItemsListContainer');
+
+      listEl.innerHTML = items.map(it => `
+        <div class="bg-slate-800 p-2.5 rounded-xl border border-slate-700 flex items-center justify-between text-xs">
+          <div>
+            <b class="text-white">${it.title}</b>
+            <span class="text-[10px] text-slate-400 block">${it.category} ${it.requirePhoto ? '• Exige Foto' : ''}</span>
+          </div>
+          <button onclick="removeChecklistItem('${it.id}')" class="text-slate-400 hover:text-red-400 p-1">
+            <i data-lucide="trash-2" class="w-4 h-4"></i>
+          </button>
+        </div>
+      `).join('');
+      lucide.createIcons();
+    }
+
+    function handleAdminAddChecklistItem() {
+      const title = document.getElementById('adminNewItemTitle').value.trim();
+      const cat = document.getElementById('adminNewItemCategory').value;
+      const req = document.getElementById('adminNewItemRequirePhoto').checked;
+
+      if (!title) {
+        alert('Digite o título do componente/item.');
+        return;
+      }
+
+      const items = getChecklistItems();
+      items.push({
+        id: 'custom_' + Date.now(),
+        category: cat,
+        title: title,
+        requirePhoto: req
+      });
+
+      saveChecklistItems(items);
+      document.getElementById('adminNewItemTitle').value = '';
+      renderAdminChecklistList();
+      alert(`Item "${title}" acrescentado com sucesso! Já está visível na tela de vistoria dos policiais.`);
+    }
+
+    function removeChecklistItem(id) {
+      if (!confirm('Deseja remover este item de checagem?')) return;
+      let items = getChecklistItems();
+      items = items.filter(it => it.id !== id);
+      saveChecklistItems(items);
+      renderAdminChecklistList();
+    }
+
+    // AVISOS NO ADMIN
+    function handleAdminSaveNotice() {
+      const targetVtr = document.getElementById('adminNoticeTargetVtr').value;
+      const msg = document.getElementById('adminNoticeMessageInput').value.trim();
+      if (!msg) {
+        alert('Digite a mensagem do aviso.');
+        return;
+      }
+
+      if (!vehicleNotices[targetVtr]) vehicleNotices[targetVtr] = [];
+      vehicleNotices[targetVtr].unshift(msg);
+      document.getElementById('adminNoticeMessageInput').value = '';
+      onDriverVehicleChange();
+      alert(`Aviso publicado com sucesso para a viatura ${targetVtr}!`);
+    }
+  </script>
+</body>
+</html>
