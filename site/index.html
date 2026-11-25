@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#0b1329">
+  <title>SisCheck-VTR | Gestão de Viaturas & Vistoria Operacional</title>
+  <link rel="stylesheet" href="/assets/app.css">
+  <script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+</head>
+<body class="bg-tactical-950 text-slate-100 min-h-screen flex flex-col font-sans antialiased pb-16">
+
+  <!-- ============================== CABEÇALHO ============================== -->
+  <header class="bg-tactical-900 border-b border-slate-800 sticky top-0 z-40 px-3 py-2.5 shadow-xl">
+    <div class="max-w-4xl mx-auto flex items-center justify-between gap-2">
+      <div class="flex items-center gap-2.5 min-w-0">
+        <div class="w-9 h-9 shrink-0 rounded-xl bg-tactical-gold/20 border border-tactical-gold flex items-center justify-center text-tactical-gold">
+          <i data-lucide="shield-check" class="w-5 h-5"></i>
+        </div>
+        <div class="min-w-0">
+          <h1 class="text-xs sm:text-sm font-black tracking-wider uppercase text-white flex items-center gap-1.5">
+            SisCheck-VTR
+            <span class="text-[9px] bg-tactical-gold/20 text-tactical-gold border border-tactical-gold/40 px-1.5 py-0.5 rounded font-mono font-bold">PM / FROTA</span>
+          </h1>
+          <p class="text-[10px] text-slate-400 font-medium flex items-center gap-1.5">
+            <span id="netDot" class="w-2 h-2 rounded-full bg-slate-500"></span>
+            <span id="netText">Conectando…</span>
+          </p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-1 bg-slate-900/90 border border-slate-700/80 p-1 rounded-xl">
+        <button id="btnRoleDriver" data-role="driver" class="role-btn px-2.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5">
+          <i data-lucide="smartphone" class="w-3.5 h-3.5"></i>
+          <span>Motorista</span>
+        </button>
+        <button id="btnRoleAdmin" data-role="admin" class="role-btn px-2.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5">
+          <i data-lucide="layout-dashboard" class="w-3.5 h-3.5"></i>
+          <span class="hidden sm:inline">Chefe de Transporte</span>
+          <span class="sm:hidden">Chefe</span>
+          <span id="badgePendingAlerts" class="hidden text-[9px] bg-red-500 text-white font-black px-1.5 rounded-full">0</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Aviso global (erros, sucesso) -->
+  <div id="toast" class="hidden fixed left-1/2 -translate-x-1/2 bottom-20 z-[60] max-w-sm w-[92%] px-4 py-3 rounded-xl text-xs font-bold shadow-2xl"></div>
+
+  <!-- ====================================================================== -->
+  <!-- VISÃO 1: MOTORISTA                                                       -->
+  <!-- ====================================================================== -->
+  <main id="driverSection" class="flex-1 max-w-md w-full mx-auto px-3.5 py-3.5 flex flex-col">
+
+    <div class="mb-3.5 bg-slate-900 border border-slate-800 rounded-2xl p-3 shadow-md">
+      <div class="flex items-center justify-between text-xs font-bold mb-1.5 text-slate-300">
+        <span id="stepTitle">Passo 1 de 4: Viatura & Escala</span>
+        <span id="stepPercent" class="text-tactical-gold font-mono">25%</span>
+      </div>
+      <div class="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
+        <div id="progressBar" class="bg-gradient-to-r from-tactical-accent to-tactical-gold h-full rounded-full transition-all duration-300" style="width:25%"></div>
+      </div>
+    </div>
+
+    <!-- PASSO 1 -->
+    <section id="step1" class="space-y-3.5">
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 shadow-md space-y-3">
+        <div class="flex items-center gap-2 text-tactical-gold text-xs font-black uppercase tracking-wider border-b border-slate-800/80 pb-2">
+          <i data-lucide="user-check" class="w-4 h-4"></i>
+          Identificação do Motorista de Serviço
+        </div>
+        <div class="grid grid-cols-2 gap-2.5">
+          <div>
+            <label for="driverRank" class="lbl">Posto / Graduação</label>
+            <select id="driverRank" class="inp">
+              <option value="">Selecione…</option>
+              <option>Sd PM</option><option>Cb PM</option><option>3º Sgt PM</option>
+              <option>2º Sgt PM</option><option>1º Sgt PM</option><option>Subten PM</option>
+              <option>Asp Of PM</option><option>2º Ten PM</option><option>1º Ten PM</option><option>Cap PM</option>
+            </select>
+          </div>
+          <div>
+            <label for="driverWarName" class="lbl">Nome de Guerra</label>
+            <input type="text" id="driverWarName" autocomplete="off" placeholder="Ex: FULANO" class="inp uppercase font-black">
+          </div>
+        </div>
+        <div>
+          <label for="driverBadge" class="lbl">Matrícula Funcional / RE</label>
+          <input type="text" id="driverBadge" inputmode="numeric" autocomplete="off" placeholder="Ex: 12.345-6" class="inp font-mono font-bold">
+        </div>
+      </div>
+
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 shadow-md space-y-3">
+        <div class="flex items-center gap-2 text-tactical-accent text-xs font-black uppercase tracking-wider border-b border-slate-800/80 pb-2">
+          <i data-lucide="truck" class="w-4 h-4"></i>
+          Dados Operacionais da Viatura
+        </div>
+        <div class="grid grid-cols-2 gap-2.5">
+          <div>
+            <label for="vehiclePrefixSelect" class="lbl">Prefixo da VTR</label>
+            <select id="vehiclePrefixSelect" class="inp font-bold"></select>
+          </div>
+          <div>
+            <label for="vehicleKmInput" class="lbl">KM Atual (Odômetro)</label>
+            <input type="number" inputmode="numeric" id="vehicleKmInput" class="inp font-mono font-black">
+            <span id="kmHint" class="text-[9px] text-slate-500"></span>
+          </div>
+        </div>
+        <div>
+          <label for="dutyPhoneInput" class="lbl">Celular Cautelado da Escala (com DDD)</label>
+          <input type="tel" id="dutyPhoneInput" placeholder="(62) 99999-9999" class="inp font-mono font-bold">
+        </div>
+        <div>
+          <span class="lbl">Nível de Combustível</span>
+          <div class="grid grid-cols-5 gap-1.5 text-center text-xs font-bold" id="fuelGroup">
+            <label class="cursor-pointer"><input type="radio" name="fuelLevel" value="Reserva" class="peer sr-only"><div class="fuel peer-checked:bg-red-500/20 peer-checked:border-red-500 peer-checked:text-red-400">Res.</div></label>
+            <label class="cursor-pointer"><input type="radio" name="fuelLevel" value="1/4" class="peer sr-only"><div class="fuel peer-checked:bg-amber-500/20 peer-checked:border-amber-500 peer-checked:text-amber-400">1/4</div></label>
+            <label class="cursor-pointer"><input type="radio" name="fuelLevel" value="1/2" class="peer sr-only"><div class="fuel peer-checked:bg-amber-500/20 peer-checked:border-amber-500 peer-checked:text-amber-400">1/2</div></label>
+            <label class="cursor-pointer"><input type="radio" name="fuelLevel" value="3/4" class="peer sr-only"><div class="fuel peer-checked:bg-emerald-500/20 peer-checked:border-emerald-500 peer-checked:text-emerald-400">3/4</div></label>
+            <label class="cursor-pointer"><input type="radio" name="fuelLevel" value="Cheio" class="peer sr-only"><div class="fuel peer-checked:bg-emerald-500/20 peer-checked:border-emerald-500 peer-checked:text-emerald-400">Cheio</div></label>
+          </div>
+        </div>
+      </div>
+
+      <div id="oilStatusCard" class="rounded-2xl p-3.5 border shadow-md space-y-2 transition"></div>
+
+      <div class="bg-amber-500/10 border border-amber-500/40 rounded-2xl p-3.5 shadow-md">
+        <div class="flex items-center gap-2 text-amber-400 text-xs font-black uppercase tracking-wider mb-2">
+          <i data-lucide="megaphone" class="w-4 h-4"></i>
+          Mural de Avisos da VTR (<span id="vtrNoticePrefixLabel">---</span>)
+        </div>
+        <div id="vtrNoticesContainer" class="space-y-2 text-xs text-amber-200/90 font-medium"></div>
+      </div>
+
+      <div id="prevShiftCard" class="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 text-xs space-y-2"></div>
+    </section>
+
+    <!-- PASSO 2 -->
+    <section id="step2" class="space-y-3.5 hidden">
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 shadow-md space-y-1">
+        <div class="flex items-center gap-2 text-tactical-accent text-xs font-black uppercase tracking-wider">
+          <i data-lucide="camera" class="w-4 h-4"></i>
+          Fotos Obrigatórias dos 4 Ângulos
+        </div>
+        <p class="text-[11px] text-slate-400 leading-relaxed">
+          Fotografe a viatura <strong>in loco</strong>. As fotos recebem carimbo com prefixo, lado, KM e condutor; a data e hora oficiais são gravadas pelo servidor.
+        </p>
+      </div>
+      <div id="photoGrid" class="grid grid-cols-2 gap-2.5"></div>
+    </section>
+
+    <!-- PASSO 3 -->
+    <section id="step3" class="space-y-3.5 hidden">
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-3 shadow-md flex items-center justify-between gap-2">
+        <div>
+          <div class="text-xs font-black uppercase tracking-wider text-white flex items-center gap-1.5">
+            <i data-lucide="check-square" class="w-4 h-4 text-tactical-gold"></i>
+            Itens de Vistoria
+          </div>
+          <p class="text-[10px] text-slate-400">Responda todos os itens. Alteração exige descrição.</p>
+        </div>
+        <button type="button" id="btnAllOk" class="text-[10px] font-bold px-2.5 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 active:scale-95 transition shrink-0">
+          Marcar pendentes OK
+        </button>
+      </div>
+      <div id="dynamicChecklistContainer" class="space-y-3"></div>
+    </section>
+
+    <!-- PASSO 4 -->
+    <section id="step4" class="space-y-3.5 hidden">
+      <div id="auditResponsibilityBanner" class="rounded-2xl p-3.5 border shadow-xl space-y-2.5 transition"></div>
+
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 text-xs space-y-2">
+        <div class="font-bold text-white uppercase tracking-wider border-b border-slate-800 pb-1.5 flex items-center justify-between">
+          <span>Resumo da Vistoria</span>
+          <span class="text-tactical-gold font-mono" id="reviewVtrPrefix">---</span>
+        </div>
+        <div class="grid grid-cols-2 gap-1.5 text-slate-300 text-[11px]" id="reviewGrid"></div>
+        <div class="pt-2 border-t border-slate-800">
+          <span class="font-bold text-slate-300">Alterações apontadas neste turno:</span>
+          <ul id="reviewAlterationsList" class="mt-1 space-y-1 text-slate-300"></ul>
+        </div>
+      </div>
+
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 space-y-2.5">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-bold uppercase tracking-wider text-slate-200 flex items-center gap-1.5">
+            <i data-lucide="pen-tool" class="w-4 h-4 text-tactical-gold"></i>
+            Assinatura do Motorista
+          </span>
+          <button type="button" id="btnClearSig" class="text-[10px] text-slate-400 hover:text-white underline">Limpar</button>
+        </div>
+        <p class="text-[10px] text-slate-400">Assine com o dedo para confirmar as informações desta vistoria:</p>
+        <div class="bg-tactical-950 rounded-xl border border-slate-700 p-1 relative overflow-hidden">
+          <canvas id="signatureCanvas" width="760" height="240" class="w-full h-32 bg-tactical-950 rounded-lg cursor-crosshair"></canvas>
+          <div id="sigPlaceholder" class="absolute inset-0 flex items-center justify-center text-slate-600 pointer-events-none text-xs font-semibold">Assine aqui com o dedo</div>
+        </div>
+      </div>
+    </section>
+
+    <div class="mt-auto pt-3 flex gap-2.5">
+      <button id="btnPrevStep" class="hidden flex-1 py-3 px-3 rounded-xl border border-slate-700 bg-slate-800 text-white font-bold text-xs uppercase tracking-wider active:bg-slate-700 flex items-center justify-center gap-1 transition">
+        <i data-lucide="chevron-left" class="w-4 h-4"></i> Voltar
+      </button>
+      <button id="btnNextStep" class="flex-1 py-3.5 px-3 rounded-xl bg-gradient-to-r from-tactical-gold to-amber-600 text-slate-950 font-black text-xs uppercase tracking-wider shadow-lg shadow-amber-500/20 active:scale-[0.98] flex items-center justify-center gap-1.5 transition disabled:opacity-60">
+        <span id="btnNextStepLabel">Avançar para Fotos</span>
+        <i data-lucide="chevron-right" class="w-4 h-4"></i>
+      </button>
+    </div>
+  </main>
+
+  <!-- ====================================================================== -->
+  <!-- VISÃO 2: CHEFE DE TRANSPORTE                                             -->
+  <!-- ====================================================================== -->
+  <main id="adminSection" class="flex-1 max-w-4xl w-full mx-auto px-3.5 py-4 hidden flex-col space-y-4">
+
+    <!-- Login -->
+    <div id="adminLogin" class="max-w-sm w-full mx-auto bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-md space-y-3">
+      <div class="flex items-center gap-2 text-tactical-gold text-xs font-black uppercase tracking-wider border-b border-slate-800 pb-2">
+        <i data-lucide="lock" class="w-4 h-4"></i> Acesso do Chefe de Transporte
+      </div>
+      <form id="formLogin" class="space-y-3">
+        <div><label for="loginEmail" class="lbl">E-mail</label><input type="email" id="loginEmail" required autocomplete="username" class="inp"></div>
+        <div><label for="loginPass" class="lbl">Senha</label><input type="password" id="loginPass" required autocomplete="current-password" class="inp"></div>
+        <button type="submit" class="btn-gold w-full py-3">Entrar</button>
+      </form>
+      <p id="loginMsg" class="text-[11px] text-red-400 hidden"></p>
+    </div>
+
+    <!-- Painel -->
+    <div id="adminPanel" class="hidden space-y-4">
+      <div class="flex items-center justify-between gap-2">
+        <div class="flex overflow-x-auto custom-scrollbar bg-slate-900 border border-slate-800 rounded-xl p-1 gap-1 flex-1">
+          <button data-tab="fleet" class="tab-btn"><i data-lucide="gauge" class="w-3.5 h-3.5"></i>Frota & Óleo</button>
+          <button data-tab="newVtr" class="tab-btn"><i data-lucide="plus-circle" class="w-3.5 h-3.5"></i><span id="tabNewVtrLabel">Cadastrar VTR</span></button>
+          <button data-tab="inspections" class="tab-btn"><i data-lucide="clipboard-list" class="w-3.5 h-3.5"></i>Vistorias</button>
+          <button data-tab="audits" class="tab-btn"><i data-lucide="gavel" class="w-3.5 h-3.5 text-red-400"></i>Avarias Omitidas</button>
+          <button data-tab="items" class="tab-btn"><i data-lucide="list-checks" class="w-3.5 h-3.5"></i>Checklist</button>
+          <button data-tab="notices" class="tab-btn"><i data-lucide="bell" class="w-3.5 h-3.5"></i>Avisos</button>
+        </div>
+        <button id="btnLogout" title="Sair" class="p-2 rounded-lg border border-slate-700 bg-slate-800 text-slate-300 hover:text-white shrink-0">
+          <i data-lucide="log-out" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <!-- Frota -->
+      <div id="adminTabFleet" class="admin-tab space-y-4">
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+          <div class="kpi"><div class="text-[10px] font-bold text-slate-400 uppercase">Frota Total</div><div class="text-xl font-black text-white mt-1" id="kpiTotalVehicles">0</div><div class="text-[9px] text-slate-500 mt-0.5">Viaturas (sem baixadas)</div></div>
+          <div class="kpi"><div class="text-[10px] font-bold text-emerald-400 uppercase">Prontas</div><div class="text-xl font-black text-emerald-400 mt-1" id="kpiActiveVehicles">0</div><div class="text-[9px] text-emerald-500/80 mt-0.5">Ativas e óleo não vencido</div></div>
+          <div class="kpi"><div class="text-[10px] font-bold text-amber-400 uppercase">Óleo Próximo</div><div class="text-xl font-black text-amber-400 mt-1" id="kpiWarningOil">0</div><div class="text-[9px] text-amber-500/80 mt-0.5">&lt; 1.000 KM ou &lt; 20 dias</div></div>
+          <div class="kpi"><div class="text-[10px] font-bold text-red-400 uppercase">Óleo Vencido</div><div class="text-xl font-black text-red-400 mt-1" id="kpiCriticalOil">0</div><div class="text-[9px] text-red-500/80 mt-0.5">Troca imediata</div></div>
+        </div>
+        <div class="card space-y-3">
+          <div class="flex items-center justify-between border-b border-slate-800 pb-2.5">
+            <div>
+              <h2 class="text-xs font-black uppercase tracking-wider text-white flex items-center gap-1.5"><i data-lucide="droplet" class="w-4 h-4 text-tactical-gold"></i>Manutenção Preventiva: Óleo</h2>
+              <p class="text-[11px] text-slate-400">KM atualizado automaticamente a cada vistoria.</p>
+            </div>
+            <button id="btnRefreshFleet" class="text-xs text-tactical-gold hover:underline flex items-center gap-1"><i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>Atualizar</button>
+          </div>
+          <div id="fleetVehiclesList" class="space-y-3"></div>
+        </div>
+      </div>
+
+      <!-- Cadastro / edição de VTR -->
+      <div id="adminTabNewVtr" class="admin-tab space-y-4 hidden">
+        <div class="card space-y-3 max-w-xl mx-auto">
+          <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+            <div class="flex items-center gap-2 text-tactical-gold text-xs font-black uppercase tracking-wider">
+              <i data-lucide="plus-circle" class="w-4 h-4"></i><span id="vtrFormTitle">Cadastrar Nova Viatura</span>
+            </div>
+            <button type="button" id="btnCancelEdit" class="hidden text-[10px] text-slate-400 underline">Cancelar edição</button>
+          </div>
+          <form id="formNewVehicle" class="space-y-3" novalidate>
+            <input type="hidden" id="vtrEditId">
+            <div class="grid grid-cols-2 gap-2.5">
+              <div><label for="newVtrPrefix" class="lbl">Prefixo</label><input type="text" id="newVtrPrefix" maxlength="20" placeholder="Ex: VTR-5012" class="inp uppercase font-black"></div>
+              <div><label for="newVtrPlate" class="lbl">Placa</label><input type="text" id="newVtrPlate" maxlength="8" placeholder="Ex: BRA2E19" class="inp uppercase font-mono"></div>
+            </div>
+            <div><label for="newVtrModel" class="lbl">Modelo / Descrição</label><input type="text" id="newVtrModel" maxlength="80" placeholder="Ex: Toyota Hilux 4x4" class="inp"></div>
+            <div class="grid grid-cols-2 gap-2.5">
+              <div><label for="newVtrKmAtual" class="lbl">KM Atual</label><input type="number" inputmode="numeric" id="newVtrKmAtual" min="0" class="inp font-mono font-bold"></div>
+              <div><label for="newVtrStatus" class="lbl">Status</label>
+                <select id="newVtrStatus" class="inp font-bold">
+                  <option value="ativa">Ativa / Em Serviço</option>
+                  <option value="manutencao">Em Manutenção / Oficina</option>
+                  <option value="reserva">Reserva Técnica</option>
+                  <option value="baixada">Baixada (fora da frota)</option>
+                </select></div>
+            </div>
+            <div class="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-2.5">
+              <span class="text-[10px] font-bold text-tactical-accent uppercase block">Última Troca de Óleo <span class="text-slate-500 normal-case font-normal">(opcional; pode preencher depois)</span></span>
+              <div class="grid grid-cols-2 gap-2.5">
+                <div><label for="newVtrLastOilKm" class="lbl">KM da Última Troca</label><input type="number" inputmode="numeric" id="newVtrLastOilKm" min="0" class="inp font-mono"></div>
+                <div><label for="newVtrLastOilDate" class="lbl">Data da Última Troca</label><input type="date" id="newVtrLastOilDate" class="inp"></div>
+              </div>
+              <div class="grid grid-cols-2 gap-2.5">
+                <div><label for="newVtrIntervalKm" class="lbl">Intervalo (KM)</label><input type="number" id="newVtrIntervalKm" value="10000" min="1" class="inp font-mono"></div>
+                <div><label for="newVtrIntervalDays" class="lbl">Intervalo (dias)</label><input type="number" id="newVtrIntervalDays" value="180" min="1" class="inp font-mono"></div>
+              </div>
+            </div>
+            <p id="vtrFormErrors" class="hidden text-[11px] text-red-300 bg-red-500/10 border border-red-500/30 rounded-lg p-2"></p>
+            <button type="submit" id="btnSaveVtr" class="btn-gold w-full py-3"><i data-lucide="check" class="w-4 h-4"></i><span id="btnSaveVtrLabel">Cadastrar Viatura</span></button>
+          </form>
+        </div>
+      </div>
+
+      <!-- Vistorias -->
+      <div id="adminTabInspections" class="admin-tab space-y-4 hidden">
+        <div class="card space-y-3">
+          <div class="flex items-center justify-between border-b border-slate-800 pb-2 gap-2">
+            <h2 class="text-xs font-black uppercase tracking-wider text-white flex items-center gap-1.5"><i data-lucide="clipboard-list" class="w-4 h-4 text-tactical-accent"></i>Últimas Vistorias</h2>
+            <select id="inspFilterVtr" class="inp !w-auto !py-1.5"></select>
+          </div>
+          <div id="inspectionsList" class="space-y-2"></div>
+        </div>
+      </div>
+
+      <!-- Avarias omitidas -->
+      <div id="adminTabAudits" class="admin-tab space-y-4 hidden">
+        <div class="card space-y-3">
+          <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+            <h2 class="text-xs font-black uppercase tracking-wider text-red-400 flex items-center gap-1.5"><i data-lucide="alert-octagon" class="w-4 h-4"></i>Avarias Não Comunicadas</h2>
+            <span class="text-[10px] text-slate-500">Detecção automática</span>
+          </div>
+          <p class="text-[11px] text-slate-400">Alteração apontada na assunção que <b>não</b> constava na vistoria do condutor anterior. É um indício para apuração, não uma conclusão: confira fotos e datas antes do despacho.</p>
+          <div id="adminSinistrosList" class="space-y-3"></div>
+        </div>
+      </div>
+
+      <!-- Checklist -->
+      <div id="adminTabItems" class="admin-tab space-y-4 hidden">
+        <div class="card space-y-3">
+          <h2 class="text-xs font-black uppercase tracking-wider text-tactical-gold flex items-center gap-1.5 border-b border-slate-800 pb-2"><i data-lucide="plus-circle" class="w-4 h-4"></i>Novo Item do Checklist</h2>
+          <div class="space-y-2.5">
+            <div><label for="adminNewItemTitle" class="lbl">Título do Componente</label><input type="text" id="adminNewItemTitle" maxlength="120" placeholder="Ex: Câmera Corporal, Luz de Ré…" class="inp"></div>
+            <div class="grid grid-cols-2 gap-2.5">
+              <div><label for="adminNewItemCategory" class="lbl">Categoria</label>
+                <select id="adminNewItemCategory" class="inp">
+                  <option>Mecânica & Fluidos</option><option>Sinalizadores & Elétrica</option><option>Rodagem & Pneus</option>
+                  <option>Higiene & Interior</option><option>Equipamentos Táticos</option><option>Outros</option>
+                </select></div>
+              <label class="flex items-center gap-2 text-[11px] text-slate-300 cursor-pointer pt-4">
+                <input type="checkbox" id="adminNewItemRequirePhoto" checked class="rounded border-slate-700"> Exigir foto se alterado
+              </label>
+            </div>
+            <button type="button" id="btnAddItem" class="btn-gold w-full py-2.5"><i data-lucide="plus" class="w-4 h-4"></i>Adicionar ao Checklist</button>
+          </div>
+        </div>
+        <div class="card space-y-2">
+          <span class="text-xs font-bold text-white uppercase tracking-wider block border-b border-slate-800 pb-2">Itens Ativos (<span id="adminTotalItemsCount">0</span>)</span>
+          <div id="adminItemsListContainer" class="space-y-2 max-h-96 overflow-y-auto custom-scrollbar pr-1"></div>
+        </div>
+      </div>
+
+      <!-- Avisos -->
+      <div id="adminTabNotices" class="admin-tab space-y-4 hidden">
+        <div class="card space-y-3">
+          <h2 class="text-xs font-black uppercase tracking-wider text-amber-400 flex items-center gap-1.5 border-b border-slate-800 pb-2"><i data-lucide="bell-plus" class="w-4 h-4"></i>Publicar Aviso no Mural</h2>
+          <div><label for="adminNoticeTargetVtr" class="lbl">Viatura</label><select id="adminNoticeTargetVtr" class="inp"></select></div>
+          <div><label for="adminNoticeMessageInput" class="lbl">Mensagem</label><textarea id="adminNoticeMessageInput" rows="3" maxlength="500" placeholder="Ex: Acionar tração 4x4 somente parado." class="inp"></textarea></div>
+          <button type="button" id="btnSaveNotice" class="w-full py-2.5 bg-amber-500 text-slate-950 font-black text-xs uppercase tracking-wider rounded-lg flex items-center justify-center gap-1.5"><i data-lucide="send" class="w-4 h-4"></i>Publicar</button>
+        </div>
+        <div class="card space-y-2">
+          <span class="text-xs font-bold text-white uppercase tracking-wider block border-b border-slate-800 pb-2">Avisos ativos</span>
+          <div id="adminNoticesList" class="space-y-2"></div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- ===================== MODAL: TROCA DE ÓLEO ===================== -->
+  <div id="modalOilMaintenance" class="modal hidden">
+    <div class="bg-slate-900 border border-slate-700 w-full max-w-sm rounded-2xl p-4 shadow-2xl space-y-3">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+        <div class="flex items-center gap-2 text-tactical-gold"><i data-lucide="wrench" class="w-5 h-5"></i><span class="text-xs font-bold uppercase text-white">Registrar Troca de Óleo</span></div>
+        <button data-close="modalOilMaintenance" class="text-slate-400 hover:text-white p-1"><i data-lucide="x" class="w-4 h-4"></i></button>
+      </div>
+      <div class="text-xs text-slate-300 space-y-2">
+        <p>Viatura: <b id="modalOilPrefix" class="text-tactical-gold font-mono">---</b></p>
+        <div><label for="modalOilDoneKm" class="lbl">KM da Troca</label><input type="number" id="modalOilDoneKm" class="inp font-mono font-bold"></div>
+        <div><label for="modalOilDoneDate" class="lbl">Data</label><input type="date" id="modalOilDoneDate" class="inp"></div>
+      </div>
+      <div class="flex gap-2 pt-2 border-t border-slate-800">
+        <button data-close="modalOilMaintenance" class="flex-1 py-2 bg-slate-800 text-white font-bold text-xs rounded-xl border border-slate-700">Cancelar</button>
+        <button id="btnConfirmOil" class="flex-1 py-2 bg-emerald-500 text-slate-950 font-black text-xs rounded-xl">Confirmar Troca</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== MODAL: TERMO ===================== -->
+  <div id="modalTermoFinalizado" class="modal hidden">
+    <div class="print-area bg-slate-900 border border-slate-700 w-full max-w-md rounded-2xl p-5 shadow-2xl max-h-[90vh] overflow-y-auto custom-scrollbar flex flex-col space-y-3.5">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-2.5">
+        <div class="flex items-center gap-2"><i data-lucide="file-check" class="w-5 h-5 text-emerald-400"></i><span class="text-xs sm:text-sm font-black text-white uppercase">Termo de Cautela e Vistoria</span></div>
+      </div>
+      <div id="termoContentBody" class="text-xs space-y-3 text-slate-300"></div>
+      <div class="flex gap-2 pt-2 border-t border-slate-800 no-print">
+        <button onclick="window.print()" class="flex-1 py-2.5 bg-slate-800 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 border border-slate-700"><i data-lucide="printer" class="w-4 h-4"></i>Imprimir / PDF</button>
+        <button id="btnCloseTermo" class="flex-1 py-2.5 bg-tactical-gold text-slate-950 font-black text-xs rounded-xl">Concluir</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== MODAL: ENVIO ===================== -->
+  <div id="modalSending" class="modal hidden">
+    <div class="bg-slate-900 border border-slate-700 w-full max-w-xs rounded-2xl p-5 shadow-2xl text-center space-y-3">
+      <i data-lucide="loader-2" class="w-8 h-8 mx-auto text-tactical-gold animate-spin"></i>
+      <p class="text-xs font-bold text-white" id="sendingText">Enviando vistoria…</p>
+      <div class="w-full bg-slate-800 h-2 rounded-full overflow-hidden"><div id="sendingBar" class="bg-tactical-gold h-full transition-all" style="width:0%"></div></div>
+    </div>
+  </div>
+
+  <!-- ===================== MODAL: DETALHE (fotos) ===================== -->
+  <div id="modalDetail" class="modal hidden">
+    <div class="bg-slate-900 border border-slate-700 w-full max-w-2xl rounded-2xl p-4 shadow-2xl max-h-[90vh] overflow-y-auto custom-scrollbar space-y-3">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+        <span id="detailTitle" class="text-xs font-black text-white uppercase">Detalhe</span>
+        <button data-close="modalDetail" class="text-slate-400 hover:text-white p-1"><i data-lucide="x" class="w-5 h-5"></i></button>
+      </div>
+      <div id="detailBody" class="text-xs text-slate-300 space-y-3"></div>
+    </div>
+  </div>
+
+  <script type="module" src="/js/app.js"></script>
+</body>
+</html>

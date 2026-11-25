@@ -19,3 +19,8 @@ flutter_app/android/**/build/
 Thumbs.db
 [Dd]esktop.ini
 .DS_Store
+
+# Web
+node_modules/
+site/assets/app.css
+.vercel

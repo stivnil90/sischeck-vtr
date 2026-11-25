@@ -1,0 +1,35 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body { -webkit-tap-highlight-color: transparent; }
+  canvas { touch-action: none; }
+}
+
+@layer components {
+  .lbl { @apply block text-[10px] font-bold text-slate-400 uppercase mb-1; }
+  .inp { @apply w-full bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-2 text-xs text-white focus:outline-none focus:border-tactical-gold; }
+  .inp-error { @apply border-red-500 ring-1 ring-red-500/40; }
+  .fuel { @apply p-2 rounded-lg bg-slate-800 border border-slate-700 transition; }
+  .btn-gold { @apply bg-tactical-gold hover:bg-amber-500 text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl flex items-center justify-center gap-1.5 shadow-lg transition disabled:opacity-60; }
+  .card { @apply bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-md; }
+  .kpi { @apply bg-slate-900 border border-slate-800 rounded-xl p-3; }
+  .tab-btn { @apply px-3 py-2 text-xs font-bold rounded-lg text-slate-400 hover:text-white shrink-0 transition flex items-center gap-1.5; }
+  .tab-btn.active { @apply bg-tactical-accent text-white shadow; }
+  .role-btn { @apply text-slate-400 hover:text-white; }
+  .role-btn.active { @apply bg-tactical-gold text-slate-950 shadow-sm hover:text-slate-950; }
+  .modal { @apply fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4; }
+  .modal.hidden { display: none; }
+}
+
+.custom-scrollbar::-webkit-scrollbar { width: 5px; height: 5px; }
+.custom-scrollbar::-webkit-scrollbar-thumb { background-color: #334155; border-radius: 4px; }
+
+@media print {
+  body * { visibility: hidden; }
+  .print-area, .print-area * { visibility: visible; }
+  .print-area { position: absolute; inset: 0; max-height: none; background: #fff; color: #000; border: 0; }
+  .print-area * { color: #000 !important; background: transparent !important; border-color: #999 !important; }
+  .no-print { display: none !important; }
+}

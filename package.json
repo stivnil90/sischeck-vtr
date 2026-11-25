@@ -1,0 +1,13 @@
+{
+  "name": "sischeck-vtr",
+  "version": "1.0.0",
+  "private": true,
+  "description": "SisCheck-VTR — vistoria operacional e gestão de viaturas",
+  "scripts": {
+    "build": "tailwindcss -i ./src/input.css -o ./site/assets/app.css --minify",
+    "dev": "tailwindcss -i ./src/input.css -o ./site/assets/app.css --watch"
+  },
+  "devDependencies": {
+    "tailwindcss": "3.4.17"
+  }
+}
