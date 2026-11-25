@@ -164,6 +164,22 @@
         </button>
       </div>
       <div id="dynamicChecklistContainer" class="space-y-3"></div>
+
+      <!-- Avarias fora do checklist -->
+      <div id="avariasSection" class="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 shadow-md space-y-3">
+        <div>
+          <div class="text-xs font-black uppercase tracking-wider text-white flex items-center gap-1.5">
+            <i data-lucide="car-front" class="w-4 h-4 text-red-400"></i>
+            Outras avarias (lataria, vidros, interior…)
+          </div>
+          <p class="text-[10px] text-slate-400">Encontrou algo que não está no checklist e não consta abaixo? Registre com foto antes de assumir a VTR.</p>
+        </div>
+        <div id="avariasAbertasList" class="space-y-1.5"></div>
+        <div id="avariasNovasList" class="space-y-2.5"></div>
+        <button type="button" id="btnAddAvaria" class="w-full py-2.5 rounded-xl border border-dashed border-red-500/60 text-red-300 text-xs font-bold flex items-center justify-center gap-1.5 active:scale-[0.98]">
+          <i data-lucide="plus" class="w-4 h-4"></i> Registrar avaria
+        </button>
+      </div>
     </section>
 
     <!-- PASSO 4 -->
@@ -409,6 +425,17 @@
       <i data-lucide="loader-2" class="w-8 h-8 mx-auto text-tactical-gold animate-spin"></i>
       <p class="text-xs font-bold text-white" id="sendingText">Enviando vistoria…</p>
       <div class="w-full bg-slate-800 h-2 rounded-full overflow-hidden"><div id="sendingBar" class="bg-tactical-gold h-full transition-all" style="width:0%"></div></div>
+    </div>
+  </div>
+
+  <!-- ===================== MODAL: AVARIAS DA VTR (chefe) ===================== -->
+  <div id="modalAvarias" class="modal hidden">
+    <div class="bg-slate-900 border border-slate-700 w-full max-w-2xl rounded-2xl p-4 shadow-2xl max-h-[90vh] overflow-y-auto custom-scrollbar space-y-3">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+        <span id="avariasTitle" class="text-xs font-black text-white uppercase">Avarias</span>
+        <button data-close="modalAvarias" class="text-slate-400 hover:text-white p-1"><i data-lucide="x" class="w-5 h-5"></i></button>
+      </div>
+      <div id="avariasBody" class="text-xs text-slate-300 space-y-2.5"></div>
     </div>
   </div>
 

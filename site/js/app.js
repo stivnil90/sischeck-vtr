@@ -23,6 +23,7 @@ const PLATE_RE = /^[A-Z]{3}-?[0-9][A-Z0-9][0-9]{2}$/;
 const BADGE_RE = /^[0-9][0-9.\-/ ]{2,19}$/;
 const STATUS_VTR = { ativa: 'Ativa', manutencao: 'Manutenção', reserva: 'Reserva', baixada: 'Baixada' };
 const STATUS_SIN = { aguardando_despacho: 'Aguardando despacho', em_apuracao: 'Em apuração', procedente: 'Procedente', arquivado: 'Arquivado' };
+const LOCAIS_AVARIA = ['Frente', 'Traseira', 'Lateral esquerda', 'Lateral direita', 'Teto', 'Vidros', 'Rodas/pneus', 'Interior', 'Outro'];
 const SIDES = [
   { key: 'Frente', icon: 'arrow-up-circle', label: 'FRENTE', field: 'foto_frente' },
   { key: 'Traseira', icon: 'arrow-down-circle', label: 'TRASEIRA', field: 'foto_traseira' },
@@ -143,9 +144,9 @@ async function stampPhoto(file, line1, line2) {
 // ESTADO
 // =============================================================================
 const S = {
-  viaturas: [], itens: [], avisos: [], passagem: null,
+  viaturas: [], itens: [], avisos: [], passagem: null, avariasAbertas: [], avariasNovas: [],
   step: 1, answers: {}, photos: {}, sigHas: false, sending: false,
-  isAdmin: false, admin: { viaturas: [], itens: [], avisos: [], sinistros: [] },
+  isAdmin: false, admin: { viaturas: [], itens: [], avisos: [], sinistros: [], avarias: [] },
   oilVtr: null
 };
 const currentVtr = () => S.viaturas.find((v) => v.id === $('vehiclePrefixSelect').value);
@@ -189,12 +190,17 @@ async function onVehicleChange(resetPhotos = true) {
     ? notices.map((n) => `<div class="flex items-start gap-2 bg-slate-900/60 p-2.5 rounded-lg border border-amber-500/20"><i data-lucide="info" class="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5"></i><span>${esc(n.mensagem)}</span></div>`).join('')
     : `<p class="text-amber-200/60">${vtr ? 'Nenhum aviso ativo para esta viatura.' : 'Selecione a viatura.'}</p>`;
 
-  S.passagem = null;
+  S.passagem = null; S.avariasAbertas = [];
   renderPrevShift();
   renderOilCard();
+  renderAvarias();
   if (vtr) {
     const { data, error } = await sb.rpc('passagem_viatura', { p_viatura_id: vtr.id });
-    if (!error && currentVtr()?.id === vtr.id) { S.passagem = data; renderPrevShift(); }
+    if (!error && currentVtr()?.id === vtr.id) {
+      S.passagem = data?.ultima || null;
+      S.avariasAbertas = data?.avarias_abertas || [];
+      renderPrevShift(); renderAvarias();
+    }
   }
   icons();
 }
@@ -222,7 +228,8 @@ function renderPrevShift() {
     <div class="p-2 rounded-lg bg-slate-800/80 text-[11px] text-slate-300 border border-slate-700/60">
       <span class="text-amber-400 font-bold">Alterações que ele apontou:</span>
       ${alts.length ? `<ul class="list-disc pl-4 mt-1">${alts.map((a) => `<li><b>${esc(a.titulo)}</b>${a.obs ? ': ' + esc(a.obs) : ''}</li>`).join('')}</ul>` : ' Nenhuma. Viatura entregue sem alterações.'}
-    </div>`;
+    </div>
+    ${S.avariasAbertas.length ? `<div class="text-[11px] text-red-300">${S.avariasAbertas.length} avaria(s) de lataria/outras já registrada(s) nesta VTR (veja no passo 3).</div>` : ''}`;
   icons();
 }
 
@@ -334,6 +341,48 @@ async function onItemPhoto(input) {
   } catch (e) { toast(friendlyError(e), 'err'); }
 }
 
+// ----- Avarias fora do checklist -----
+function renderAvarias() {
+  const ab = S.avariasAbertas;
+  $('avariasAbertasList').innerHTML = ab.length
+    ? `<div class="text-[10px] font-bold uppercase text-slate-400">Já registradas nesta VTR (não são sua responsabilidade):</div>` +
+      ab.map((a) => `<div class="text-[11px] bg-slate-800/70 border border-slate-700 rounded-lg px-2.5 py-1.5"><b class="text-amber-300">${esc(a.local)}</b>: ${esc(a.descricao)} <span class="text-slate-500">• ${esc(fmtDT(a.em))}</span></div>`).join('')
+    : `<p class="text-[11px] text-slate-500">${currentVtr() ? 'Nenhuma avaria registrada nesta VTR até agora.' : ''}</p>`;
+  $('avariasNovasList').innerHTML = S.avariasNovas.map((a, i) => `
+    <div class="bg-red-950/30 border border-red-500/50 rounded-xl p-2.5 space-y-2">
+      <div class="flex items-center justify-between">
+        <span class="text-[10px] font-black uppercase text-red-300">Nova avaria ${i + 1}</span>
+        <button type="button" data-avrm="${i}" class="text-[10px] text-slate-400 underline">remover</button>
+      </div>
+      <select data-avlocal="${i}" class="inp">
+        <option value="">Local da avaria…</option>
+        ${LOCAIS_AVARIA.map((l) => `<option ${a.local === l ? 'selected' : ''}>${l}</option>`).join('')}
+      </select>
+      <input type="text" maxlength="300" data-avdesc="${i}" value="${esc(a.desc || '')}" placeholder="Ex: arranhão de 20 cm na porta traseira" class="inp">
+      <div class="flex items-center gap-2">
+        <label class="flex-1 bg-red-500/20 border border-red-500/50 rounded-lg py-2 px-3 text-[10px] font-bold text-red-200 flex items-center justify-center gap-1.5 cursor-pointer">
+          <i data-lucide="camera" class="w-3.5 h-3.5 text-red-400"></i><span>${a.photo ? 'Trocar foto' : 'Foto da avaria (obrigatória)'}</span>
+          <input type="file" accept="image/*" capture="environment" class="sr-only" data-avphoto="${i}">
+        </label>
+        ${a.photo ? `<div class="w-12 h-12 rounded-lg border border-red-400 overflow-hidden shrink-0"><img src="${a.photo.url}" alt="" class="w-full h-full object-cover"></div>` : ''}
+      </div>
+    </div>`).join('');
+  icons();
+}
+
+async function onAvariaPhoto(input) {
+  const file = input.files?.[0]; if (!file) return;
+  const i = Number(input.dataset.avphoto);
+  const a = S.avariasNovas[i]; if (!a) return;
+  try {
+    const res = await stampPhoto(file, `SISCHECK-VTR | ${currentVtr()?.prefixo || '?'} | AVARIA ${(a.local || '').toUpperCase()}`,
+      `APONTADA POR: ${driverName()} | CAPTURA: ${new Date().toLocaleString('pt-BR')}`);
+    if (a.photo) URL.revokeObjectURL(a.photo.url);
+    a.photo = res;
+    renderAvarias();
+  } catch (e) { toast(friendlyError(e), 'err'); }
+}
+
 // ----- Validações por passo -----
 function validateStep1() {
   const bad = [], msgs = [];
@@ -371,6 +420,13 @@ function validateStep3() {
     else if (a.status === 'ALTERACAO' && it.exige_foto && !a.photo) msg = `Foto obrigatória da alteração em "${it.titulo}".`;
     if (msg) { $('item-' + it.id)?.scrollIntoView({ behavior: 'smooth', block: 'center' }); toast(msg, 'err'); return false; }
   }
+  for (const [i, a] of S.avariasNovas.entries()) {
+    let msg = null;
+    if (!a.local) msg = `Informe o local da nova avaria ${i + 1}.`;
+    else if ((a.desc || '').trim().length < 3) msg = `Descreva a nova avaria ${i + 1}.`;
+    else if (!a.photo) msg = `Fotografe a nova avaria ${i + 1}.`;
+    if (msg) { $('avariasSection').scrollIntoView({ behavior: 'smooth', block: 'center' }); toast(msg, 'err'); return false; }
+  }
   return true;
 }
 
@@ -381,7 +437,9 @@ function renderReview() {
   const vtr = currentVtr();
   const alts = S.itens.filter((it) => S.answers[it.id]?.status === 'ALTERACAO');
   const prevIds = new Set((S.passagem?.alteracoes || []).map((a) => a.item_id));
-  const omitted = S.passagem ? alts.filter((it) => !prevIds.has(it.id)) : [];
+  const omittedItens = S.passagem ? alts.filter((it) => !prevIds.has(it.id)) : [];
+  const novas = S.avariasNovas.map((a) => ({ titulo: 'Avaria: ' + a.local, obs: a.desc.trim(), photo: a.photo }));
+  const omitted = [...omittedItens.map((it) => ({ titulo: it.titulo, obs: S.answers[it.id].obs })), ...(S.passagem ? novas : [])];
   const banner = $('auditResponsibilityBanner');
 
   if (!S.passagem) {
@@ -392,7 +450,7 @@ function renderReview() {
     banner.innerHTML = `<div class="flex items-center gap-2 text-red-400 font-black text-xs uppercase"><i data-lucide="alert-octagon" class="w-5 h-5 text-red-500"></i>Alteração não apontada pelo condutor anterior</div>
       <div class="p-2.5 bg-red-950/70 rounded-xl border border-red-500/30 text-xs text-red-200 space-y-1.5">
         <div class="text-[11px]">Condutor anterior: <b class="text-tactical-gold">${esc(S.passagem.condutor)} (Mat. ${esc(S.passagem.matricula)})</b></div>
-        <ul class="list-disc pl-4 space-y-0.5 text-[11px]">${omitted.map((it) => `<li><b>${esc(it.titulo)}</b>: ${esc(S.answers[it.id].obs)}</li>`).join('')}</ul>
+        <ul class="list-disc pl-4 space-y-0.5 text-[11px]">${omitted.map((o) => `<li><b>${esc(o.titulo)}</b>: ${esc(o.obs)}</li>`).join('')}</ul>
       </div>
       <p class="text-[10px] text-red-300 font-semibold">Ao finalizar, o registro resguarda o seu turno e é encaminhado ao Chefe de Transporte para apuração.</p>`;
   } else {
@@ -408,8 +466,9 @@ function renderReview() {
     <div>KM: <b class="text-white font-mono">${fmtKm($('vehicleKmInput').value)}</b> <span class="text-slate-500">(+${fmtKm($('vehicleKmInput').value - (vtr?.km_atual || 0))})</span></div>
     <div>Combustível: <b class="text-white">${esc(fuel)}</b></div>
     <div class="col-span-2">Telefone da escala: <b class="text-white font-mono">${esc($('dutyPhoneInput').value)}</b></div>`;
-  $('reviewAlterationsList').innerHTML = alts.length
-    ? alts.map((it) => `<li class="bg-slate-800/80 p-2 rounded-lg border border-red-500/30 flex items-start justify-between text-xs"><div><b class="text-red-400">${esc(it.titulo)}</b>: ${esc(S.answers[it.id].obs)}</div>${S.answers[it.id].photo ? '<span class="text-[9px] bg-red-500/20 text-red-300 px-1.5 py-0.5 rounded font-bold shrink-0 ml-1">Foto</span>' : ''}</li>`).join('')
+  const todas = [...alts.map((it) => ({ titulo: it.titulo, obs: S.answers[it.id].obs, photo: S.answers[it.id].photo })), ...novas];
+  $('reviewAlterationsList').innerHTML = todas.length
+    ? todas.map((o) => `<li class="bg-slate-800/80 p-2 rounded-lg border border-red-500/30 flex items-start justify-between text-xs"><div><b class="text-red-400">${esc(o.titulo)}</b>: ${esc(o.obs)}</div>${o.photo ? '<span class="text-[9px] bg-red-500/20 text-red-300 px-1.5 py-0.5 rounded font-bold shrink-0 ml-1">Foto</span>' : ''}</li>`).join('')
     : '<li class="text-emerald-400 font-semibold">Sem alterações.</li>';
   icons();
 }
@@ -484,6 +543,7 @@ async function finalize() {
       const a = S.answers[it.id];
       if (a?.status === 'ALTERACAO' && a.photo) uploads.push({ path: `${folder}/avaria-${it.id}.jpg`, blob: a.photo.blob, type: 'image/jpeg', itemId: it.id });
     });
+    S.avariasNovas.forEach((a, i) => uploads.push({ path: `${folder}/avaria-extra-${i + 1}.jpg`, blob: a.photo.blob, type: 'image/jpeg', extra: i }));
 
     let done = 0;
     sending(true, `Enviando fotos (0/${uploads.length})…`, 5);
@@ -510,6 +570,7 @@ async function finalize() {
       })
     };
     uploads.filter((u) => u.field).forEach((u) => { payload[u.field] = u.path; });
+    payload.avarias_novas = S.avariasNovas.map((a, i) => ({ local: a.local, descricao: a.desc.trim(), foto_path: uploads.find((u) => u.extra === i).path }));
 
     const { data, error } = await sb.rpc('finalizar_vistoria', { p: payload });
     if (error) throw error;
@@ -533,11 +594,12 @@ function showTermo(res, vtr) {
       <div>CONDUTOR: <b>${esc(driverName())}</b> (Mat. ${esc($('driverBadge').value.trim())})</div>
       <div>TEL. ESCALA: <b>${esc($('dutyPhoneInput').value)}</b> | COMB.: <b>${esc(fuel)}</b></div>
       <div>ALTERAÇÕES: <b>${alts.length ? esc(alts.map((a) => a.titulo).join('; ')) : 'nenhuma'}</b></div>
+      ${S.avariasNovas.length ? `<div>AVARIAS REGISTRADAS: <b>${esc(S.avariasNovas.map((a) => `${a.local}: ${a.desc.trim()}`).join('; '))}</b></div>` : ''}
     </div>
     <div class="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-emerald-300 text-xs font-semibold flex items-center gap-2">
       <i data-lucide="shield-check" class="w-5 h-5 text-emerald-400"></i><span>Vistoria registrada na nuvem. Data e hora gravadas pelo servidor.</span>
     </div>
-    ${res.avarias_nao_comunicadas ? `<div class="p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-red-300 text-xs font-semibold">${res.avarias_nao_comunicadas} alteração(ões) não apontada(s) pelo condutor anterior foram encaminhadas ao Chefe de Transporte.</div>` : ''}
+    ${res.avarias_nao_comunicadas ? `<div class="p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-red-300 text-xs font-semibold">${res.avarias_nao_comunicadas} alteração(ões)/avaria(s) não apontada(s) pelo condutor anterior foram encaminhadas ao Chefe de Transporte, registradas antes de você assumir a VTR.</div>` : ''}
     <div><span class="font-bold text-slate-300 block mb-1">Fotos enviadas:</span>
       <div class="grid grid-cols-4 gap-1.5">${SIDES.map((s) => `<div class="aspect-square bg-slate-800 rounded border border-slate-700 overflow-hidden"><img src="${S.photos[s.key].url}" alt="${s.label}" class="w-full h-full object-cover"></div>`).join('')}</div></div>
     <div><span class="font-bold text-slate-300 block mb-1">Assinatura:</span><div class="bg-slate-950 p-1 rounded-lg border border-slate-800"><img src="${$('signatureCanvas').toDataURL()}" alt="Assinatura" class="h-12 mx-auto"></div></div>`;
@@ -554,11 +616,12 @@ async function closeTermo() {
 function resetDriver() {
   Object.values(S.photos).forEach((p) => URL.revokeObjectURL(p.url));
   Object.values(S.answers).forEach((a) => a.photo && URL.revokeObjectURL(a.photo.url));
-  S.photos = {}; S.answers = {}; S.passagem = null;
+  S.avariasNovas.forEach((a) => a.photo && URL.revokeObjectURL(a.photo.url));
+  S.photos = {}; S.answers = {}; S.passagem = null; S.avariasNovas = []; S.avariasAbertas = [];
   ['driverRank', 'driverWarName', 'driverBadge', 'vehicleKmInput', 'vehiclePrefixSelect'].forEach((id) => { $(id).value = ''; });
   document.querySelectorAll('input[name="fuelLevel"]').forEach((r) => { r.checked = false; });
   clearSignature();
-  renderPhotoGrid(); renderChecklist();
+  renderPhotoGrid(); renderChecklist(); renderAvarias();
   setStep(1);
 }
 
@@ -599,16 +662,18 @@ async function onLogout() {
 }
 
 async function loadAdmin() {
-  const [v, i, a, s] = await Promise.all([
+  const [v, i, a, s, av] = await Promise.all([
     sb.from('viaturas').select('*').order('prefixo'),
     sb.from('checklist_itens').select('*').order('ativo', { ascending: false }).order('ordem').order('titulo'),
     sb.from('avisos').select('id, viatura_id, mensagem, created_at').eq('ativo', true).order('created_at', { ascending: false }),
-    sb.from('sinistros').select('*').order('created_at', { ascending: false }).limit(200)
+    sb.from('sinistros').select('*').order('created_at', { ascending: false }).limit(200),
+    sb.from('avarias').select('*').eq('status', 'aberta').order('created_at', { ascending: false })
   ]);
-  const err = v.error || i.error || a.error || s.error;
+  const err = v.error || i.error || a.error || s.error || av.error;
   if (err) { toast(friendlyError(err), 'err'); return; }
-  Object.assign(S.admin, { viaturas: v.data, itens: i.data, avisos: a.data, sinistros: s.data });
+  Object.assign(S.admin, { viaturas: v.data, itens: i.data, avisos: a.data, sinistros: s.data, avarias: av.data });
   renderFleet(); renderAdminItems(); renderAdminNotices(); renderSinistros(); fillAdminSelects();
+  if (!$('modalAvarias').classList.contains('hidden') && S.avariasVtr) openAvarias(S.avariasVtr);
   await loadInspections();
 }
 
@@ -657,6 +722,7 @@ function renderFleet() {
         </div>
         <div class="flex items-center gap-1.5">
           ${baixada ? '' : `<span class="text-[10px] px-2 py-0.5 rounded-full border font-bold uppercase ${tone[0]}">${tone[3]}</span>`}
+          ${(() => { const n = S.admin.avarias.filter((x) => x.viatura_id === v.id).length; return `<button data-avarias="${v.id}" class="text-[10px] ${n ? 'bg-red-500/20 text-red-200 border border-red-500/40' : 'bg-slate-700 text-white'} font-bold px-2.5 py-1 rounded-lg flex items-center gap-1"><i data-lucide="car-front" class="w-3 h-3"></i>Avarias${n ? ` (${n})` : ''}</button>`; })()}
           <button data-edit="${v.id}" class="text-[10px] bg-slate-700 hover:bg-slate-600 text-white font-bold px-2.5 py-1 rounded-lg flex items-center gap-1"><i data-lucide="pencil" class="w-3 h-3"></i>Editar</button>
           ${baixada ? '' : `<button data-oil="${v.id}" class="text-[10px] bg-tactical-gold hover:bg-amber-500 text-slate-950 font-black px-2.5 py-1 rounded-lg flex items-center gap-1"><i data-lucide="wrench" class="w-3 h-3"></i>Troca</button>`}
         </div>
@@ -823,10 +889,11 @@ async function openInspection(id) {
   $('detailTitle').textContent = 'Carregando…';
   $('detailBody').innerHTML = '';
   $('modalDetail').classList.remove('hidden');
-  const { data: v, error } = await sb.from('vistorias').select('*, vistoria_itens(*)').eq('id', id).single();
+  const { data: v, error } = await sb.from('vistorias').select('*, vistoria_itens(*), avarias!avarias_vistoria_origem_id_fkey(*)').eq('id', id).single();
   if (error) { toast(friendlyError(error), 'err'); return; }
   const itens = (v.vistoria_itens || []).sort((a, b) => a.item_titulo.localeCompare(b.item_titulo));
-  const urls = await signed([v.foto_frente, v.foto_traseira, v.foto_esquerda, v.foto_direita, v.assinatura_path, ...itens.map((i) => i.foto_path)]);
+  const extras = v.avarias || [];
+  const urls = await signed([v.foto_frente, v.foto_traseira, v.foto_esquerda, v.foto_direita, v.assinatura_path, ...itens.map((i) => i.foto_path), ...extras.map((a) => a.foto_path)]);
   const img = (p, alt) => urls[p] ? `<a href="${urls[p]}" target="_blank" rel="noopener"><img src="${urls[p]}" alt="${esc(alt)}" class="w-full aspect-video object-cover rounded-lg border border-slate-700"></a>` : '<div class="aspect-video bg-slate-800 rounded-lg"></div>';
   const alts = itens.filter((i) => i.status === 'ALTERACAO');
   $('detailTitle').textContent = `${v.protocolo} • ${vtrById(v.viatura_id)?.prefixo || ''}`;
@@ -841,8 +908,45 @@ async function openInspection(id) {
     <div><span class="font-bold text-white">Alterações (${alts.length})</span>
       ${alts.length ? alts.map((i) => `<div class="mt-2 bg-slate-800/80 border border-red-500/30 rounded-lg p-2 flex gap-2"><div class="flex-1"><b class="text-red-400">${esc(i.item_titulo)}</b>: ${esc(i.observacao)}</div>${i.foto_path ? `<div class="w-24">${img(i.foto_path, i.item_titulo)}</div>` : ''}</div>`).join('') : '<p class="text-emerald-400 mt-1">Nenhuma.</p>'}
     </div>
+    ${extras.length ? `<div><span class="font-bold text-white">Avarias registradas nesta vistoria (${extras.length})</span>
+      ${extras.map((a) => `<div class="mt-2 bg-slate-800/80 border border-red-500/30 rounded-lg p-2 flex gap-2"><div class="flex-1"><b class="text-red-400">${esc(a.local)}</b>: ${esc(a.descricao)} <span class="text-[10px] text-slate-500">(${esc(a.status)})</span></div><div class="w-24">${img(a.foto_path, a.local)}</div></div>`).join('')}</div>` : ''}
     <div><span class="font-bold text-white block mb-1">Assinatura</span><div class="bg-slate-950 p-1 rounded-lg border border-slate-800">${urls[v.assinatura_path] ? `<img src="${urls[v.assinatura_path]}" alt="Assinatura" class="h-16 mx-auto">` : ''}</div></div>`;
   icons();
+}
+
+// ----- Registro de avarias da VTR -----
+async function openAvarias(vid) {
+  S.avariasVtr = vid;
+  const v = vtrById(vid);
+  const list = S.admin.avarias.filter((a) => a.viatura_id === vid);
+  $('avariasTitle').textContent = `Avarias em aberto • ${v?.prefixo || ''}`;
+  $('modalAvarias').classList.remove('hidden');
+  if (!list.length) { $('avariasBody').innerHTML = '<p class="text-slate-500 text-center py-4">Nenhuma avaria em aberto nesta VTR.</p>'; return; }
+  const urls = await signed(list.map((a) => a.foto_path));
+  $('avariasBody').innerHTML = list.map((a) => `
+    <div class="bg-slate-800/80 border border-slate-700 rounded-xl p-3 flex gap-3">
+      ${urls[a.foto_path] ? `<a href="${urls[a.foto_path]}" target="_blank" rel="noopener" class="w-28 shrink-0"><img src="${urls[a.foto_path]}" alt="" class="w-full aspect-video object-cover rounded-lg border border-slate-600"></a>` : ''}
+      <div class="flex-1 space-y-1.5">
+        <div><b class="text-amber-300">${esc(a.local)}</b>: ${esc(a.descricao)}</div>
+        <div class="text-[10px] text-slate-400">Apontada por ${esc(a.apontada_por)} em ${esc(fmtDT(a.created_at))}</div>
+        <input data-avobs="${a.id}" maxlength="300" placeholder="Obs. da baixa (ex.: reparada na oficina, OS 123)" class="inp">
+        <div class="flex gap-1.5">
+          <button data-avbaixa="${a.id}" data-st="reparada" class="text-[10px] bg-emerald-500 text-slate-950 font-black px-2.5 py-1 rounded-lg">Marcar reparada</button>
+          <button data-avbaixa="${a.id}" data-st="descartada" class="text-[10px] bg-slate-700 text-white font-bold px-2.5 py-1 rounded-lg">Descartar (registro indevido)</button>
+          <button data-insp="${a.vistoria_origem_id}" class="text-[10px] bg-slate-700 text-white font-bold px-2.5 py-1 rounded-lg">Ver vistoria</button>
+        </div>
+      </div>
+    </div>`).join('');
+  icons();
+}
+
+async function baixaAvaria(id, status) {
+  const obs = document.querySelector(`[data-avobs="${id}"]`)?.value.trim() || null;
+  if (status === 'descartada' && !obs) { toast('Informe o motivo do descarte na observação.', 'err'); return; }
+  const { error } = await sb.from('avarias').update({ status, baixa_obs: obs, baixa_em: new Date().toISOString() }).eq('id', id);
+  if (error) { toast(friendlyError(error), 'err'); return; }
+  toast(status === 'reparada' ? 'Avaria marcada como reparada.' : 'Avaria descartada.', 'ok');
+  await loadAdmin();
 }
 
 // ----- Avarias não comunicadas -----
@@ -980,6 +1084,22 @@ function bind() {
   });
   cl.addEventListener('input', (e) => { const id = e.target.dataset.obs; if (id) (S.answers[id] ||= { status: 'ALTERACAO' }).obs = e.target.value; });
   cl.addEventListener('change', (e) => e.target.dataset.itemphoto && onItemPhoto(e.target));
+  $('btnAddAvaria').addEventListener('click', () => {
+    if (S.avariasNovas.length >= 20) { toast('Máximo de 20 avarias por vistoria.', 'err'); return; }
+    S.avariasNovas.push({ local: '', desc: '', photo: null }); renderAvarias();
+  });
+  const av = $('avariasSection');
+  av.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-avrm]'); if (!b) return;
+    const a = S.avariasNovas.splice(Number(b.dataset.avrm), 1)[0];
+    if (a?.photo) URL.revokeObjectURL(a.photo.url);
+    renderAvarias();
+  });
+  av.addEventListener('input', (e) => { const i = e.target.dataset.avdesc; if (i != null) S.avariasNovas[Number(i)].desc = e.target.value; });
+  av.addEventListener('change', (e) => {
+    if (e.target.dataset.avlocal != null) S.avariasNovas[Number(e.target.dataset.avlocal)].local = e.target.value;
+    else if (e.target.dataset.avphoto != null) onAvariaPhoto(e.target);
+  });
   $('btnAllOk').addEventListener('click', () => { S.itens.forEach((it) => { if (!S.answers[it.id]?.status) S.answers[it.id] = { status: 'OK' }; }); renderChecklist(); });
 
   // Chefe
@@ -996,11 +1116,17 @@ function bind() {
   $('btnAddItem').addEventListener('click', addItem);
   $('btnSaveNotice').addEventListener('click', saveNotice);
   $('inspFilterVtr').addEventListener('change', loadInspections);
+  $('modalAvarias').addEventListener('click', (e) => {
+    const t = e.target.closest('button'); if (!t) return;
+    if (t.dataset.avbaixa) baixaAvaria(t.dataset.avbaixa, t.dataset.st);
+    else if (t.dataset.insp) openInspection(t.dataset.insp);
+  });
   document.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => $(b.dataset.close).classList.add('hidden')));
 
   $('adminPanel').addEventListener('click', (e) => {
     const t = e.target.closest('button'); if (!t) return;
-    if (t.dataset.edit) editVtr(t.dataset.edit);
+    if (t.dataset.avarias) openAvarias(t.dataset.avarias);
+    else if (t.dataset.edit) editVtr(t.dataset.edit);
     else if (t.dataset.oil) openOil(t.dataset.oil);
     else if (t.dataset.insp) openInspection(t.dataset.insp);
     else if (t.dataset.sinsave) saveSinistro(t.dataset.sinsave);
@@ -1011,7 +1137,7 @@ function bind() {
   window.addEventListener('online', () => loadDriverData());
   window.addEventListener('offline', () => setNet(false, 'Sem internet'));
   window.addEventListener('beforeunload', (e) => {
-    if (S.step > 1 || Object.keys(S.photos).length) { e.preventDefault(); e.returnValue = ''; }
+    if (S.step > 1 || Object.keys(S.photos).length || S.avariasNovas.length) { e.preventDefault(); e.returnValue = ''; }
   });
 }
 
