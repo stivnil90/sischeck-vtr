@@ -64,7 +64,16 @@ function markInvalid(ids) {
 // ---------------------------------------------------------------------------
 function oilStatus(v, km) {
   if (v.km_ultima_troca_oleo == null || !v.data_ultima_troca_oleo) {
-    return { status: 'SEM_DADOS', reason: 'Dados da última troca de óleo não informados', health: 0, nextKm: null, nextDate: '—' };
+    // Sem troca registrada: orientação pela próxima marca de intervalo do odômetro (ex.: 10.000, 20.000…)
+    const iv = v.intervalo_troca_oleo_km || 10000;
+    if (!km) return { status: 'SEM_DADOS', estimated: true, reason: 'Aguardando o KM da primeira vistoria', health: 0, nextKm: null, nextDate: '—' };
+    const nextKm = (Math.floor(km / iv) + 1) * iv;
+    const rem = nextKm - km;
+    return {
+      status: rem <= 1000 ? 'ALERTA' : 'OK', estimated: true,
+      reason: `Orientação: faltam ${fmtKm(rem)} km para a troca dos ${fmtKm(nextKm)} km`,
+      health: Math.round(rem / iv * 100), nextKm, nextDate: '—'
+    };
   }
   const kmUsed = km - v.km_ultima_troca_oleo;
   const kmRem = v.intervalo_troca_oleo_km - kmUsed;
@@ -226,7 +235,7 @@ function renderOilCard() {
   if (oil.status === 'SEM_DADOS') {
     card.className = 'bg-slate-900 border border-slate-700 rounded-2xl p-3.5 space-y-1';
     card.innerHTML = `<div class="flex items-center gap-1.5 text-xs font-black uppercase text-slate-300"><i data-lucide="droplet" class="w-4 h-4 text-slate-400"></i>Óleo do motor</div>
-      <p class="text-[11px] text-slate-400">Controle de troca ainda não configurado pelo Chefe de Transporte para esta VTR.</p>`;
+      <p class="text-[11px] text-slate-400">Digite o KM do painel para ver quanto falta até a próxima troca (a cada ${fmtKm(vtr.intervalo_troca_oleo_km)} km).</p>`;
   } else if (oil.status === 'VENCIDO') {
     card.className = 'bg-red-500/15 border-2 border-red-500 rounded-2xl p-3.5 shadow-lg space-y-2';
     card.innerHTML = `<div class="flex items-center justify-between text-xs font-black uppercase text-red-400"><span class="flex items-center gap-1.5"><i data-lucide="alert-triangle" class="w-4 h-4 text-red-500"></i>Óleo do motor vencido</span><span class="text-[10px] bg-red-500 text-white px-2 py-0.5 rounded font-mono">0%</span></div>
@@ -239,7 +248,7 @@ function renderOilCard() {
       <div class="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden"><div class="bg-amber-500 h-full" style="width:${oil.health}%"></div></div>`;
   } else {
     card.className = 'bg-emerald-500/10 border border-emerald-500/30 rounded-2xl p-3.5 shadow-sm space-y-1.5';
-    card.innerHTML = `<div class="flex items-center justify-between text-xs font-black uppercase text-emerald-400"><span class="flex items-center gap-1.5"><i data-lucide="check-circle" class="w-4 h-4"></i>Óleo do motor em dia</span><span class="text-[10px] font-mono font-bold">${oil.health}% vida útil</span></div>
+    card.innerHTML = `<div class="flex items-center justify-between text-xs font-black uppercase text-emerald-400"><span class="flex items-center gap-1.5"><i data-lucide="check-circle" class="w-4 h-4"></i>${oil.estimated ? 'Próxima troca de óleo' : 'Óleo do motor em dia'}</span><span class="text-[10px] font-mono font-bold">${oil.health}% vida útil</span></div>
       <p class="text-[11px] text-slate-300">${esc(oil.reason)}</p>`;
   }
   icons();
@@ -633,10 +642,11 @@ function renderFleet() {
       if (oil.status === 'VENCIDO') crit++;
     }
     const semDados = oil.status === 'SEM_DADOS';
+    const semTroca = v.km_ultima_troca_oleo == null;
     const tone = semDados ? ['bg-slate-700/60 text-slate-300 border-slate-600', 'bg-slate-600', 'text-slate-400', 'Óleo não informado']
       : oil.status === 'VENCIDO' ? ['bg-red-500/15 text-red-400 border-red-500/50', 'bg-red-500', 'text-red-400', 'Óleo vencido']
       : oil.status === 'ALERTA' ? ['bg-amber-500/10 text-amber-400 border-amber-500/40', 'bg-amber-500', 'text-amber-400', 'Troca próxima']
-      : ['bg-emerald-500/10 text-emerald-400 border-emerald-500/30', 'bg-emerald-500', 'text-emerald-400', 'Óleo em dia'];
+      : ['bg-emerald-500/10 text-emerald-400 border-emerald-500/30', 'bg-emerald-500', 'text-emerald-400', oil.estimated ? 'Óleo (orientação)' : 'Óleo em dia'];
     return `<div class="bg-slate-800/80 border border-slate-700/80 rounded-xl p-3.5 space-y-2.5 ${baixada ? 'opacity-50' : ''}">
       <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-700/50 pb-2">
         <div class="flex items-center gap-2 flex-wrap">
@@ -653,7 +663,7 @@ function renderFleet() {
       </div>
       <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px] text-slate-300">
         <div>KM atual: <b class="text-white font-mono">${v.km_atual > 0 ? fmtKm(v.km_atual) : 'aguardando 1ª vistoria'}</b></div>
-        ${semDados ? `<div class="col-span-1 sm:col-span-3 text-slate-400">Clique em <b>Editar</b> para informar o KM e a data da última troca de óleo.</div>` : `
+        ${semTroca ? `<div class="col-span-1 sm:col-span-3 text-slate-400">${oil.nextKm ? `Próxima troca (orientação): <b class="text-tactical-gold font-mono">${fmtKm(oil.nextKm)} km</b>. ` : ''}Sem troca registrada: use <b>Troca</b> quando fizer a próxima.</div>` : `
         <div>Última troca: <b class="text-white font-mono">${fmtKm(v.km_ultima_troca_oleo)}</b> <span class="text-slate-500">${fmtDate(v.data_ultima_troca_oleo)}</span></div>
         <div>Próxima: <b class="text-tactical-gold font-mono">${fmtKm(oil.nextKm)} km</b></div>
         <div>Prazo: <b class="text-white">${oil.nextDate}</b></div>`}
