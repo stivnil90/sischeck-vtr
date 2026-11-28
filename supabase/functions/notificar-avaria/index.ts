@@ -57,6 +57,12 @@ Deno.serve(async (req) => {
     ]);
     if (!atual || !ant || !vtr) throw new Error("dados da vistoria não encontrados");
 
+    // Avarias que já constavam no registro da VTR e que este motorista apenas confirmou:
+    // não entram na apuração, mas aparecem para o Chefe ver o quadro completo.
+    const { data: confs } = await sb.from("avaria_confirmacoes")
+      .select("avarias(local, descricao, created_at)").eq("vistoria_id", vistoria_id);
+    const confirmadas = (confs ?? []).map((c: any) => c.avarias).filter(Boolean);
+
     // Fotos das avarias como anexos (aparecem no corpo do e-mail)
     const attachments: { filename: string; content: Uint8Array; contentType: string; cid: string }[] = [];
     for (const [i, s] of sins.entries()) {
@@ -110,6 +116,14 @@ Deno.serve(async (req) => {
     </table>
 
     <table style="width:100%;border-collapse:collapse;font-size:14px">${linhas}</table>
+
+    ${confirmadas.length ? `
+    <div style="margin-top:14px;padding:10px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;font-size:13px">
+      <div style="font-size:11px;color:#166534;font-weight:bold">JÁ REGISTRADAS ANTES E CONFIRMADAS PELO MOTORISTA (FORA DA APURAÇÃO)</div>
+      <ul style="margin:6px 0 0;padding-left:18px;color:#334155">
+        ${confirmadas.map((a: any) => `<li><b>${esc(a.local)}</b>: ${esc(a.descricao)} <span style="color:#64748b">(registrada em ${esc(dt(a.created_at))})</span></li>`).join("")}
+      </ul>
+    </div>` : ""}
 
     <p style="margin:18px 0 6px">
       <a href="${APP_URL}" style="background:#f59e0b;color:#0b1329;text-decoration:none;font-weight:bold;padding:10px 16px;border-radius:8px;display:inline-block">

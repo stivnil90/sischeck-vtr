@@ -172,7 +172,7 @@
             <i data-lucide="car-front" class="w-4 h-4 text-red-400"></i>
             Outras avarias (lataria, vidros, interior…)
           </div>
-          <p class="text-[10px] text-slate-400">Encontrou algo que não está no checklist e não consta abaixo? Registre com foto antes de assumir a VTR.</p>
+          <p class="text-[10px] text-slate-400">Confira abaixo o que já foi registrado e confirme o que ainda está lá. Só registre com foto o que for <b>novo</b>.</p>
         </div>
         <div id="avariasAbertasList" class="space-y-1.5"></div>
         <div id="avariasNovasList" class="space-y-2.5"></div>
@@ -195,6 +195,10 @@
         <div class="pt-2 border-t border-slate-800">
           <span class="font-bold text-slate-300">Alterações apontadas neste turno:</span>
           <ul id="reviewAlterationsList" class="mt-1 space-y-1 text-slate-300"></ul>
+          <div id="reviewConfirmadasBox" class="hidden mt-3">
+            <span class="text-[10px] font-bold uppercase text-emerald-400">Já registradas, confirmadas por você (sem nova apuração):</span>
+            <ul id="reviewConfirmadasList" class="mt-1 space-y-1 text-slate-300"></ul>
+          </div>
         </div>
       </div>
 

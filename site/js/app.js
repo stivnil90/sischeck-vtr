@@ -102,6 +102,17 @@ function oilStatus(v, km) {
   return { status, reason, health, nextKm: v.km_ultima_troca_oleo + v.intervalo_troca_oleo_km, nextDate: next.toLocaleDateString('pt-BR') };
 }
 
+// Miniatura sem carimbo (o carimbo tem o nome de quem apontou; a miniatura é vista por outros motoristas)
+async function makeThumb(file) {
+  const img = await loadImage(file);
+  const max = 360;
+  const r = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+  const c = document.createElement('canvas');
+  c.width = Math.round(img.naturalWidth * r); c.height = Math.round(img.naturalHeight * r);
+  c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+  return new Promise((res) => c.toBlob(res, 'image/jpeg', 0.7));
+}
+
 // ---------------------------------------------------------------------------
 // Imagem: redimensiona + carimbo
 // ---------------------------------------------------------------------------
@@ -145,8 +156,9 @@ async function stampPhoto(file, line1, line2) {
 // =============================================================================
 const S = {
   viaturas: [], itens: [], avisos: [], passagem: null, avariasAbertas: [], avariasNovas: [],
+  confirmadas: new Set(), miniUrls: {},
   step: 1, answers: {}, photos: {}, sigHas: false, sending: false,
-  isAdmin: false, admin: { viaturas: [], itens: [], avisos: [], sinistros: [], avarias: [] },
+  isAdmin: false, admin: { viaturas: [], itens: [], avisos: [], sinistros: [], avarias: [], confirmacoes: [] },
   oilVtr: null
 };
 const currentVtr = () => S.viaturas.find((v) => v.id === $('vehiclePrefixSelect').value);
@@ -190,7 +202,7 @@ async function onVehicleChange(resetPhotos = true) {
     ? notices.map((n) => `<div class="flex items-start gap-2 bg-slate-900/60 p-2.5 rounded-lg border border-amber-500/20"><i data-lucide="info" class="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5"></i><span>${esc(n.mensagem)}</span></div>`).join('')
     : `<p class="text-amber-200/60">${vtr ? 'Nenhum aviso ativo para esta viatura.' : 'Selecione a viatura.'}</p>`;
 
-  S.passagem = null; S.avariasAbertas = [];
+  S.passagem = null; S.avariasAbertas = []; S.confirmadas = new Set(); S.miniUrls = {};
   renderPrevShift();
   renderOilCard();
   renderAvarias();
@@ -200,9 +212,20 @@ async function onVehicleChange(resetPhotos = true) {
       S.passagem = data?.ultima || null;
       S.avariasAbertas = data?.avarias_abertas || [];
       renderPrevShift(); renderAvarias();
+      loadMiniaturas(vtr.id);
     }
   }
   icons();
+}
+
+// Miniaturas das avarias em aberto (o servidor só libera as de avarias abertas)
+async function loadMiniaturas(vid) {
+  const paths = S.avariasAbertas.map((a) => a.foto_mini).filter(Boolean);
+  if (!paths.length) return;
+  const { data } = await sb.storage.from(BUCKET).createSignedUrls(paths, 900);
+  if (currentVtr()?.id !== vid || !data) return;
+  S.miniUrls = Object.fromEntries(data.filter((d) => d.signedUrl).map((d) => [d.path, d.signedUrl]));
+  renderAvarias();
 }
 
 function renderPrevShift() {
@@ -229,7 +252,7 @@ function renderPrevShift() {
       <span class="text-amber-400 font-bold">Alterações que ele apontou:</span>
       ${alts.length ? `<ul class="list-disc pl-4 mt-1">${alts.map((a) => `<li><b>${esc(a.titulo)}</b>${a.obs ? ': ' + esc(a.obs) : ''}</li>`).join('')}</ul>` : ' Nenhuma. Viatura entregue sem alterações.'}
     </div>
-    ${S.avariasAbertas.length ? `<div class="text-[11px] text-red-300">${S.avariasAbertas.length} avaria(s) de lataria/outras já registrada(s) nesta VTR (veja no passo 3).</div>` : ''}`;
+    ${S.avariasAbertas.length ? `<div class="text-[11px] text-red-300">${S.avariasAbertas.length} avaria(s) de lataria/outras já registrada(s) nesta VTR. No passo 3, confirme as que ainda estão lá em vez de registrar de novo.</div>` : ''}`;
   icons();
 }
 
@@ -345,8 +368,26 @@ async function onItemPhoto(input) {
 function renderAvarias() {
   const ab = S.avariasAbertas;
   $('avariasAbertasList').innerHTML = ab.length
-    ? `<div class="text-[10px] font-bold uppercase text-slate-400">Já registradas nesta VTR (não são sua responsabilidade):</div>` +
-      ab.map((a) => `<div class="text-[11px] bg-slate-800/70 border border-slate-700 rounded-lg px-2.5 py-1.5"><b class="text-amber-300">${esc(a.local)}</b>: ${esc(a.descricao)} <span class="text-slate-500">• ${esc(fmtDT(a.em))}</span></div>`).join('')
+    ? `<div class="p-2.5 rounded-xl bg-sky-500/10 border border-sky-500/30 text-[11px] text-sky-100 space-y-0.5">
+        <div class="font-black uppercase text-[10px] text-sky-300 flex items-center gap-1"><i data-lucide="shield-check" class="w-3.5 h-3.5"></i>Já registradas nesta VTR (${ab.length})</div>
+        <div>Essas avarias já foram comunicadas e <b>não são sua responsabilidade</b>. Se ainda estiverem lá, toque em <b>Confirmo, ainda presente</b>. Não precisa fotografar nem registrar de novo: a confirmação fica gravada com seu nome e a hora do servidor.</div>
+      </div>` +
+      ab.map((a) => {
+        const on = a.id && S.confirmadas.has(a.id);
+        const mini = a.foto_mini && S.miniUrls[a.foto_mini];
+        const n = Number(a.confirmacoes || 0);
+        return `<div class="rounded-xl border ${on ? 'border-emerald-500/60 bg-emerald-500/10' : 'border-slate-700 bg-slate-800/70'} p-2 flex gap-2.5">
+          <div class="w-16 h-16 rounded-lg overflow-hidden bg-slate-950 border border-slate-700 shrink-0 flex items-center justify-center">
+            ${mini ? `<img src="${mini}" alt="" class="w-full h-full object-cover" data-avzoom="${esc(mini)}">` : '<i data-lucide="image-off" class="w-5 h-5 text-slate-600"></i>'}
+          </div>
+          <div class="flex-1 min-w-0 space-y-1">
+            <div class="text-[11px]"><b class="text-amber-300">${esc(a.local)}</b>: ${esc(a.descricao)}</div>
+            <div class="text-[10px] text-slate-500">Registrada em ${esc(fmtDT(a.em))}${n ? ` • confirmada ${n}x, última em ${esc(fmtDT(a.ultima_confirmacao))}` : ''}</div>
+            ${a.id ? `<button type="button" data-avconf="${esc(a.id)}" class="text-[10px] font-black px-2.5 py-1 rounded-lg flex items-center gap-1 ${on ? 'bg-emerald-500 text-slate-950' : 'bg-slate-700 text-white border border-slate-600'}">
+              <i data-lucide="${on ? 'check-circle' : 'circle'}" class="w-3.5 h-3.5"></i>${on ? 'Confirmado: ainda presente' : 'Confirmo, ainda presente'}</button>` : ''}
+          </div>
+        </div>`;
+      }).join('')
     : `<p class="text-[11px] text-slate-500">${currentVtr() ? 'Nenhuma avaria registrada nesta VTR até agora.' : ''}</p>`;
   $('avariasNovasList').innerHTML = S.avariasNovas.map((a, i) => `
     <div class="bg-red-950/30 border border-red-500/50 rounded-xl p-2.5 space-y-2">
@@ -358,6 +399,7 @@ function renderAvarias() {
         <option value="">Local da avaria…</option>
         ${LOCAIS_AVARIA.map((l) => `<option ${a.local === l ? 'selected' : ''}>${l}</option>`).join('')}
       </select>
+      ${(() => { const iguais = S.avariasAbertas.filter((x) => x.local === a.local); return a.local && iguais.length ? `<div class="text-[10px] text-sky-200 bg-sky-500/10 border border-sky-500/30 rounded-lg px-2 py-1.5">Já existe ${iguais.length} avaria registrada em <b>${esc(a.local)}</b> (lista acima). Se for a mesma, use <b>Confirmo, ainda presente</b> e remova este registro.</div>` : ''; })()}
       <input type="text" maxlength="300" data-avdesc="${i}" value="${esc(a.desc || '')}" placeholder="Ex: arranhão de 20 cm na porta traseira" class="inp">
       <div class="flex items-center gap-2">
         <label class="flex-1 bg-red-500/20 border border-red-500/50 rounded-lg py-2 px-3 text-[10px] font-bold text-red-200 flex items-center justify-center gap-1.5 cursor-pointer">
@@ -379,6 +421,7 @@ async function onAvariaPhoto(input) {
       `APONTADA POR: ${driverName()} | CAPTURA: ${new Date().toLocaleString('pt-BR')}`);
     if (a.photo) URL.revokeObjectURL(a.photo.url);
     a.photo = res;
+    a.mini = await makeThumb(file).catch(() => null);
     renderAvarias();
   } catch (e) { toast(friendlyError(e), 'err'); }
 }
@@ -470,8 +513,12 @@ function renderReview() {
   $('reviewAlterationsList').innerHTML = todas.length
     ? todas.map((o) => `<li class="bg-slate-800/80 p-2 rounded-lg border border-red-500/30 flex items-start justify-between text-xs"><div><b class="text-red-400">${esc(o.titulo)}</b>: ${esc(o.obs)}</div>${o.photo ? '<span class="text-[9px] bg-red-500/20 text-red-300 px-1.5 py-0.5 rounded font-bold shrink-0 ml-1">Foto</span>' : ''}</li>`).join('')
     : '<li class="text-emerald-400 font-semibold">Sem alterações.</li>';
+  const conf = confirmadasList();
+  $('reviewConfirmadasBox').classList.toggle('hidden', !conf.length);
+  $('reviewConfirmadasList').innerHTML = conf.map((a) => `<li class="bg-emerald-500/10 p-2 rounded-lg border border-emerald-500/30 text-xs"><b class="text-emerald-300">${esc(a.local)}</b>: ${esc(a.descricao)}</li>`).join('');
   icons();
 }
+function confirmadasList() { return S.avariasAbertas.filter((a) => a.id && S.confirmadas.has(a.id)); }
 
 // ----- Assinatura -----
 let sigCtx;
@@ -543,7 +590,10 @@ async function finalize() {
       const a = S.answers[it.id];
       if (a?.status === 'ALTERACAO' && a.photo) uploads.push({ path: `${folder}/avaria-${it.id}.jpg`, blob: a.photo.blob, type: 'image/jpeg', itemId: it.id });
     });
-    S.avariasNovas.forEach((a, i) => uploads.push({ path: `${folder}/avaria-extra-${i + 1}.jpg`, blob: a.photo.blob, type: 'image/jpeg', extra: i }));
+    S.avariasNovas.forEach((a, i) => {
+      uploads.push({ path: `${folder}/avaria-extra-${i + 1}.jpg`, blob: a.photo.blob, type: 'image/jpeg', extra: i });
+      if (a.mini) uploads.push({ path: `${folder}/avaria-extra-${i + 1}-mini.jpg`, blob: a.mini, type: 'image/jpeg', mini: i });
+    });
 
     let done = 0;
     sending(true, `Enviando fotos (0/${uploads.length})…`, 5);
@@ -570,7 +620,12 @@ async function finalize() {
       })
     };
     uploads.filter((u) => u.field).forEach((u) => { payload[u.field] = u.path; });
-    payload.avarias_novas = S.avariasNovas.map((a, i) => ({ local: a.local, descricao: a.desc.trim(), foto_path: uploads.find((u) => u.extra === i).path }));
+    payload.avarias_novas = S.avariasNovas.map((a, i) => ({
+      local: a.local, descricao: a.desc.trim(),
+      foto_path: uploads.find((u) => u.extra === i).path,
+      foto_mini_path: uploads.find((u) => u.mini === i)?.path || null
+    }));
+    payload.avarias_confirmadas = confirmadasList().map((a) => a.id);
 
     const { data, error } = await sb.rpc('finalizar_vistoria', { p: payload });
     if (error) throw error;
@@ -594,6 +649,7 @@ function showTermo(res, vtr) {
       <div>CONDUTOR: <b>${esc(driverName())}</b> (Mat. ${esc($('driverBadge').value.trim())})</div>
       <div>TEL. ESCALA: <b>${esc($('dutyPhoneInput').value)}</b> | COMB.: <b>${esc(fuel)}</b></div>
       <div>ALTERAÇÕES: <b>${alts.length ? esc(alts.map((a) => a.titulo).join('; ')) : 'nenhuma'}</b></div>
+      ${confirmadasList().length ? `<div>AVARIAS JÁ REGISTRADAS, CONFIRMADAS POR VOCÊ: <b>${esc(confirmadasList().map((a) => `${a.local}: ${a.descricao}`).join('; '))}</b></div>` : ''}
       ${S.avariasNovas.length ? `<div>AVARIAS REGISTRADAS: <b>${esc(S.avariasNovas.map((a) => `${a.local}: ${a.desc.trim()}`).join('; '))}</b></div>` : ''}
     </div>
     <div class="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-emerald-300 text-xs font-semibold flex items-center gap-2">
@@ -617,7 +673,7 @@ function resetDriver() {
   Object.values(S.photos).forEach((p) => URL.revokeObjectURL(p.url));
   Object.values(S.answers).forEach((a) => a.photo && URL.revokeObjectURL(a.photo.url));
   S.avariasNovas.forEach((a) => a.photo && URL.revokeObjectURL(a.photo.url));
-  S.photos = {}; S.answers = {}; S.passagem = null; S.avariasNovas = []; S.avariasAbertas = [];
+  S.photos = {}; S.answers = {}; S.passagem = null; S.avariasNovas = []; S.avariasAbertas = []; S.confirmadas = new Set(); S.miniUrls = {};
   ['driverRank', 'driverWarName', 'driverBadge', 'vehicleKmInput', 'vehiclePrefixSelect'].forEach((id) => { $(id).value = ''; });
   document.querySelectorAll('input[name="fuelLevel"]').forEach((r) => { r.checked = false; });
   clearSignature();
@@ -671,7 +727,10 @@ async function loadAdmin() {
   ]);
   const err = v.error || i.error || a.error || s.error || av.error;
   if (err) { toast(friendlyError(err), 'err'); return; }
-  Object.assign(S.admin, { viaturas: v.data, itens: i.data, avisos: a.data, sinistros: s.data, avarias: av.data });
+  // Confirmações das avarias em aberto (tabela pode não existir antes da migração: ignora erro)
+  const ids = av.data.map((x) => x.id);
+  const cf = ids.length ? await sb.from('avaria_confirmacoes').select('*').in('avaria_id', ids).order('created_at', { ascending: false }) : { data: [] };
+  Object.assign(S.admin, { viaturas: v.data, itens: i.data, avisos: a.data, sinistros: s.data, avarias: av.data, confirmacoes: cf.data || [] });
   renderFleet(); renderAdminItems(); renderAdminNotices(); renderSinistros(); fillAdminSelects();
   if (!$('modalAvarias').classList.contains('hidden') && S.avariasVtr) openAvarias(S.avariasVtr);
   await loadInspections();
@@ -891,6 +950,7 @@ async function openInspection(id) {
   $('modalDetail').classList.remove('hidden');
   const { data: v, error } = await sb.from('vistorias').select('*, vistoria_itens(*), avarias!avarias_vistoria_origem_id_fkey(*)').eq('id', id).single();
   if (error) { toast(friendlyError(error), 'err'); return; }
+  const { data: confs } = await sb.from('avaria_confirmacoes').select('created_at, avarias(local, descricao, status)').eq('vistoria_id', id);
   const itens = (v.vistoria_itens || []).sort((a, b) => a.item_titulo.localeCompare(b.item_titulo));
   const extras = v.avarias || [];
   const urls = await signed([v.foto_frente, v.foto_traseira, v.foto_esquerda, v.foto_direita, v.assinatura_path, ...itens.map((i) => i.foto_path), ...extras.map((a) => a.foto_path)]);
@@ -910,6 +970,8 @@ async function openInspection(id) {
     </div>
     ${extras.length ? `<div><span class="font-bold text-white">Avarias registradas nesta vistoria (${extras.length})</span>
       ${extras.map((a) => `<div class="mt-2 bg-slate-800/80 border border-red-500/30 rounded-lg p-2 flex gap-2"><div class="flex-1"><b class="text-red-400">${esc(a.local)}</b>: ${esc(a.descricao)} <span class="text-[10px] text-slate-500">(${esc(a.status)})</span></div><div class="w-24">${img(a.foto_path, a.local)}</div></div>`).join('')}</div>` : ''}
+    ${confs?.length ? `<div><span class="font-bold text-white">Avarias já registradas que o condutor confirmou (${confs.length})</span>
+      ${confs.map((c) => `<div class="mt-2 bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-2"><b class="text-emerald-300">${esc(c.avarias?.local)}</b>: ${esc(c.avarias?.descricao)}</div>`).join('')}</div>` : ''}
     <div><span class="font-bold text-white block mb-1">Assinatura</span><div class="bg-slate-950 p-1 rounded-lg border border-slate-800">${urls[v.assinatura_path] ? `<img src="${urls[v.assinatura_path]}" alt="Assinatura" class="h-16 mx-auto">` : ''}</div></div>`;
   icons();
 }
@@ -929,6 +991,7 @@ async function openAvarias(vid) {
       <div class="flex-1 space-y-1.5">
         <div><b class="text-amber-300">${esc(a.local)}</b>: ${esc(a.descricao)}</div>
         <div class="text-[10px] text-slate-400">Apontada por ${esc(a.apontada_por)} em ${esc(fmtDT(a.created_at))}</div>
+        ${(() => { const cs = S.admin.confirmacoes.filter((c) => c.avaria_id === a.id); return cs.length ? `<div class="text-[10px] text-emerald-300">Confirmada por ${cs.length} condutor(es). Última: ${esc(cs[0].condutor)} (Mat. ${esc(cs[0].matricula)}) em ${esc(fmtDT(cs[0].created_at))}</div>` : '<div class="text-[10px] text-slate-500">Nenhuma confirmação posterior.</div>'; })()}
         <input data-avobs="${a.id}" maxlength="300" placeholder="Obs. da baixa (ex.: reparada na oficina, OS 123)" class="inp">
         <div class="flex gap-1.5">
           <button data-avbaixa="${a.id}" data-st="reparada" class="text-[10px] bg-emerald-500 text-slate-950 font-black px-2.5 py-1 rounded-lg">Marcar reparada</button>
@@ -1090,6 +1153,14 @@ function bind() {
   });
   const av = $('avariasSection');
   av.addEventListener('click', (e) => {
+    const c = e.target.closest('[data-avconf]');
+    if (c) {
+      const id = c.dataset.avconf;
+      if (S.confirmadas.has(id)) S.confirmadas.delete(id); else S.confirmadas.add(id);
+      renderAvarias(); return;
+    }
+    const z = e.target.closest('[data-avzoom]');
+    if (z) { window.open(z.dataset.avzoom, '_blank', 'noopener'); return; }
     const b = e.target.closest('[data-avrm]'); if (!b) return;
     const a = S.avariasNovas.splice(Number(b.dataset.avrm), 1)[0];
     if (a?.photo) URL.revokeObjectURL(a.photo.url);
@@ -1097,7 +1168,7 @@ function bind() {
   });
   av.addEventListener('input', (e) => { const i = e.target.dataset.avdesc; if (i != null) S.avariasNovas[Number(i)].desc = e.target.value; });
   av.addEventListener('change', (e) => {
-    if (e.target.dataset.avlocal != null) S.avariasNovas[Number(e.target.dataset.avlocal)].local = e.target.value;
+    if (e.target.dataset.avlocal != null) { S.avariasNovas[Number(e.target.dataset.avlocal)].local = e.target.value; renderAvarias(); }
     else if (e.target.dataset.avphoto != null) onAvariaPhoto(e.target);
   });
   $('btnAllOk').addEventListener('click', () => { S.itens.forEach((it) => { if (!S.answers[it.id]?.status) S.answers[it.id] = { status: 'OK' }; }); renderChecklist(); });
